@@ -1,0 +1,75 @@
+.root {
+    -fx-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    -fx-font-size: 13px;
+}
+
+.table-view {
+    -fx-background-color: white;
+    -fx-border-color: #e0e0e0;
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+}
+
+.table-view .column-header-background {
+    -fx-background-color: #f2f2f7;
+}
+
+.table-view .column-header, .table-view .filler {
+    -fx-size: 30px;
+}
+
+.split-pane-divider {
+    -fx-background-color: #e0e0e0;
+}
+
+.text-field, .combo-box, .text-area {
+    -fx-background-radius: 6px;
+    -fx-border-radius: 6px;
+}
+
+.label {
+    -fx-text-fill: #333;
+}
+
+.code-area {
+    -fx-font-family: "Consolas", "Courier New", monospace;
+    -fx-font-size: 13px;
+    -fx-background-color: #ffffff;
+    -fx-background-insets: 0;
+    -fx-text-fill: #000000;
+    -fx-opacity: 1.0;
+    -fx-font-weight: bold;
+}
+
+.code-area .selection {
+    -fx-fill: #dae8fd;
+}
+
+/* Подсветка JSON */
+.json-key {
+    -fx-fill: #1e88e5;
+}
+
+.json-string {
+    -fx-fill: #43a047;
+}
+
+.json-number {
+    -fx-fill: #f4511e;
+}
+
+.json-brace, .json-bracket, .json-colon, .json-comma {
+    -fx-fill: #555555;
+}
+
+/* Подсветка поиска */
+.search-highlight {
+    -fx-fill: black;
+    -rtfx-background-color: yellow;
+}
+
+.filter-active {
+    -fx-border-color: red;
+    -fx-border-width: 1px;
+    -fx-border-radius: 6px;
+}

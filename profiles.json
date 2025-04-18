@@ -1,0 +1,9 @@
+[ {
+  "name" : "local-casino",
+  "path" : "/Volumes/work/sites/oxgaming/casino1/log",
+  "format" : "OX"
+}, {
+  "name" : "local-crm",
+  "path" : "/Volumes/work/sites/oxgaming/crm/log",
+  "format" : "OX"
+} ]
