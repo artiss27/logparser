@@ -27,9 +27,16 @@ public class ProfileManager {
     private final VBox profilePane;
     private final ComboBox<Profile> profileSelector;
     private final ObservableList<Profile> profiles = FXCollections.observableArrayList();
-    private static final String PROFILE_FILE = "profiles.json";
     private static final ObjectMapper mapper = new ObjectMapper();
+    private static final String PROFILE_FILE = getProfileFilePath();
     private Consumer<Profile> profileSelectedCallback;
+
+    static {
+        String envHome = System.getenv("HOME");
+        if (envHome != null && !envHome.isBlank()) {
+            System.setProperty("user.home", envHome);
+        }
+    }
 
     public ProfileManager() {
         profilePane = new VBox(10);
@@ -77,11 +84,10 @@ public class ProfileManager {
 
         profilePane.getChildren().addAll(new Label("Profiles:"), controls);
 
-        // Загрузка при старте
         profiles.addAll(loadProfiles());
-        if (!profiles.isEmpty()) {
-            profileSelector.getSelectionModel();
-        }
+//        if (!profiles.isEmpty()) {
+//            profileSelector.getSelectionModel().selectFirst();
+//        }
     }
 
     public VBox getProfilePane() {
@@ -94,24 +100,6 @@ public class ProfileManager {
 
     public void setOnProfileSelected(Consumer<Profile> callback) {
         this.profileSelectedCallback = callback;
-    }
-
-    private void addProfile() {
-        DirectoryChooser chooser = new DirectoryChooser();
-        chooser.setTitle("Select Log Directory");
-        File selectedDir = chooser.showDialog(null);
-        if (selectedDir != null) {
-            TextInputDialog formatDialog = new TextInputDialog("OX");
-            formatDialog.setTitle("Select Format");
-            formatDialog.setHeaderText("Enter log format for this directory (e.g., OX or Symfony):");
-            Optional<String> result = formatDialog.showAndWait();
-            result.ifPresent(format -> {
-                Profile newProfile = new Profile(selectedDir.getName(), selectedDir.getAbsolutePath(), format);
-                profiles.add(newProfile);
-                saveProfiles();
-                profileSelector.getSelectionModel().select(newProfile);
-            });
-        }
     }
 
     private void deleteSelectedProfile() {
@@ -137,7 +125,7 @@ public class ProfileManager {
         File file = new File(PROFILE_FILE);
         if (file.exists()) {
             try {
-                return mapper.readValue(file, new TypeReference<List<Profile>>() {});
+                return mapper.readValue(file, new TypeReference<>() {});
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -147,7 +135,9 @@ public class ProfileManager {
 
     private void saveProfiles() {
         try {
-            mapper.writerWithDefaultPrettyPrinter().writeValue(new File(PROFILE_FILE), profiles);
+            File file = new File(PROFILE_FILE);
+            file.getParentFile().mkdirs(); // ensure directory exists
+            mapper.writerWithDefaultPrettyPrinter().writeValue(file, profiles);
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -162,12 +152,10 @@ public class ProfileManager {
         vbox.setPadding(new Insets(20));
         vbox.setStyle("-fx-background-color: #f9f9f9; -fx-background-radius: 10;");
 
-        // Name
         TextField nameField = new TextField();
         nameField.setPromptText("Profile Name");
         nameField.setPrefWidth(300);
 
-        // Path
         TextField pathField = new TextField();
         pathField.setPromptText("Select Path...");
         pathField.setEditable(false);
@@ -187,13 +175,11 @@ public class ProfileManager {
         HBox pathBox = new HBox(5, pathField, browseButton);
         HBox.setHgrow(pathField, Priority.ALWAYS);
 
-        // Format
         ComboBox<String> formatBox = new ComboBox<>();
         formatBox.getItems().addAll("OX", "Symfony");
         formatBox.setPromptText("Select Format");
         formatBox.setPrefWidth(300);
 
-        // Buttons
         Button saveButton = new Button("Save");
         Button cancelButton = new Button("Cancel");
 
@@ -233,5 +219,20 @@ public class ProfileManager {
         dialog.setScene(scene);
         dialog.setResizable(false);
         dialog.showAndWait();
+    }
+
+    private static String getProfileFilePath() {
+        String os = System.getProperty("os.name").toLowerCase();
+        String baseDir;
+
+        if (os.contains("win")) {
+            baseDir = System.getenv("APPDATA");
+        } else if (os.contains("mac")) {
+            baseDir = System.getProperty("user.home") + "/Library/Application Support";
+        } else {
+            baseDir = System.getProperty("user.home") + "/.config";
+        }
+
+        return baseDir + "/LogParser/profiles.json";
     }
 }

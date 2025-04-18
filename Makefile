@@ -3,15 +3,19 @@ MAIN_CLASS = com.example.MainApp
 JAVAFX_SDK = javafx-sdk-21.0.2
 ICON_PATH = src/main/resources/icons/logparser.icns
 
-.PHONY: run package
+.PHONY: run package clean
+
+install: clean package
 
 run:
 	mvn javafx:run
 
-package:
-	mvn package
+clean:
+	rm -rf target
+	rm -f logparser.jar
 
-	cp target/logparser-1.0-SNAPSHOT.jar target/logparser.jar
+package: clean
+	mvn package
 
 	jpackage \
 		--input target \
@@ -19,10 +23,11 @@ package:
 		--main-jar logparser.jar \
 		--main-class $(MAIN_CLASS) \
 		--icon $(ICON_PATH) \
-		--type app-image \
+		--type dmg \
 		--dest ~/Downloads \
 		--module-path $(JAVAFX_SDK)/lib \
 		--add-modules javafx.controls,javafx.fxml \
-		--java-options '--enable-native-access=ALL-UNNAMED'
+		--java-options "--enable-native-access=ALL-UNNAMED -Duser.home=$(shell echo $$HOME)" \
+		--verbose
 
-	@echo "✅ Done! App created at ~/Downloads/$(APP_NAME).app"
+	@echo "✅ Done! DMG created at ~/Downloads/$(APP_NAME).dmg"
