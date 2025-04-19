@@ -1,12 +1,13 @@
 package com.example.manager;
 
+import com.example.model.Profile;
+import com.example.watcher.LogFileWatcher;
 import javafx.geometry.Orientation;
 import javafx.scene.control.SplitPane;
 import javafx.scene.layout.VBox;
 
-/**
- * Управляет основным расположением интерфейса.
- */
+import java.io.File;
+
 public class MainLayoutManager {
 
     private final SplitPane mainLayout;
@@ -15,31 +16,46 @@ public class MainLayoutManager {
     private final ProfileManager profileManager;
     private final FileManager fileManager;
 
+    private final LogFileWatcher logFileWatcher;
+
     public MainLayoutManager() {
         mainLayout = new SplitPane();
 
-        // Сначала инициализируем менеджеры
+        // Инициализация менеджеров
         logManager = new LogManager(this);
         detailManager = new DetailManager(this);
         profileManager = new ProfileManager();
         fileManager = new FileManager(this, profileManager);
 
-        // Левая панель = Профили + Файлы
-        VBox leftPanel = new VBox(10, profileManager.getProfilePane(), fileManager.getFileListPane());
+        // Watcher
+        logFileWatcher = new LogFileWatcher(fileManager, logManager);
 
-        // Центральная панель = Логи + Детальный просмотр
+        // 🔧 Объединённая логика выбора профиля
+        profileManager.setOnProfileSelected(profile -> {
+            fileManager.getFileNames().clear();              // очищаем список файлов
+            logManager.clearLogs();                          // очищаем логи
+            if (profile != null) {
+                fileManager.getFormatSelector().setValue(profile.getFormat());        // выбираем формат
+                logManager.setActiveParser(profile.getFormat());                      // устанавливаем парсер
+                fileManager.loadFileList(profile);                                    // загружаем список файлов
+
+                File path = new File(profile.getPath());
+                if (path.exists() && path.isDirectory()) {
+                    logFileWatcher.startWatching(path);                               // запускаем watcher
+                }
+            }
+        });
+
+        // UI разметка
+        VBox leftPanel = new VBox(10, profileManager.getProfilePane(), fileManager.getFileListPane());
         VBox centerPanel = logManager.getLogViewPane();
 
         SplitPane rightPanel = new SplitPane();
         rightPanel.setOrientation(Orientation.VERTICAL);
         rightPanel.getItems().addAll(centerPanel, detailManager.getDetailPane());
-
-        // Устанавливаем деление между таблицей и деталями (30% / 70%)
         rightPanel.setDividerPositions(0.4);
 
         mainLayout.getItems().addAll(leftPanel, rightPanel);
-
-        // Деление между левым и правым блоком (20% / 80%)
         mainLayout.setDividerPositions(0.2);
     }
 
@@ -61,5 +77,9 @@ public class MainLayoutManager {
 
     public FileManager getFileManager() {
         return fileManager;
+    }
+
+    public void shutdown() {
+        logFileWatcher.stopWatching(); // корректное завершение потока
     }
 }

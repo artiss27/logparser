@@ -19,6 +19,10 @@ import java.time.format.DateTimeFormatter;
 
 import java.io.File;
 import java.util.*;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
+import javafx.beans.binding.Bindings;
+import javafx.util.Duration;
 
 public class LogManager {
 
@@ -37,6 +41,7 @@ public class LogManager {
     private final ProgressBar progressBar = new ProgressBar();
     private final Button loadMoreButton = new Button("Load more");
     private PagedLogLoader pagedLoader;
+    private final Map<String, Boolean> groupColorMap = new HashMap<>();
 
     public LogManager(MainLayoutManager layoutManager) {
         this.layoutManager = layoutManager;
@@ -130,6 +135,7 @@ public class LogManager {
                 } else {
                     setGraphic(null);
                     setText(date);
+                    setStyle("-fx-alignment: CENTER-LEFT;");
                 }
             }
         });
@@ -207,13 +213,32 @@ public class LogManager {
         dateColumn.setSortType(TableColumn.SortType.DESCENDING);
         table.getSortOrder().add(dateColumn);
 
+        // 🔧 Подсветка новых строк в таблице
+        table.setRowFactory(tv -> new TableRow<>() {
+            @Override
+            protected void updateItem(LogEntry item, boolean empty) {
+                super.updateItem(item, empty);
+
+                styleProperty().unbind();
+
+                if (empty || item == null) {
+                    setStyle("");
+                } else {
+                    styleProperty().bind(Bindings
+                            .when(item.highlightedProperty())
+                            .then("-fx-background-color: rgba(255,255,0,0.4);")
+                            .otherwise(""));
+                }
+            }
+        });
+
         return table;
     }
 
     public void loadLogsFromFile(String fileName) {
         clearLogs();
         File file = new File(fileName);
-        if (!file.exists()) return;
+        if (!file.exists() || file.isDirectory()) return;
 
         pagedLoader = new PagedLogLoader(file, activeParser);
         pagedLoader.reset();
@@ -374,5 +399,47 @@ public class LogManager {
             masterData.add(spacer);
             masterData.add(marker);
         }
+    }
+
+    public void prependLogEntries(List<LogEntry> entries) {
+        for (LogEntry entry : entries) {
+            String groupKey = extractGroupKey(entry.getDate());
+            entry.setGroupKey(groupKey);
+            masterData.add(0, entry);
+            highlightEntry(entry);
+        }
+        rebuildGroupColorMap();
+        autoResizeColumns();
+    }
+
+    private String extractGroupKey(String dateStr) {
+        if (dateStr == null || dateStr.isBlank()) return "";
+        return dateStr.split("\\.")[0].trim(); // "2024-04-19 12:45:22.124" → "2024-04-19 12:45:22"
+    }
+
+    private void rebuildGroupColorMap() {
+        groupColorMap.clear();
+        List<String> orderedKeys = new ArrayList<>();
+
+        for (LogEntry entry : masterData) {
+            String key = entry.getGroupKey();
+            if (!groupColorMap.containsKey(key)) {
+                boolean useAlt = (orderedKeys.size() % 2 != 0);
+                groupColorMap.put(key, useAlt);
+                orderedKeys.add(key);
+            }
+        }
+    }
+
+    private void highlightEntry(LogEntry entry) {
+        entry.setHighlighted(true);
+        Timeline timeline = new Timeline(
+                new KeyFrame(Duration.seconds(15), e -> entry.setHighlighted(false))
+        );
+        timeline.play();
+    }
+
+    public LogParser getActiveParser() {
+        return activeParser;
     }
 }

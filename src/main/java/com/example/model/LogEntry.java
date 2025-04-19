@@ -1,5 +1,8 @@
 package com.example.model;
 
+import javafx.beans.property.BooleanProperty;
+import javafx.beans.property.SimpleBooleanProperty;
+
 public class LogEntry {
     private String date;
     private String file;
@@ -9,6 +12,8 @@ public class LogEntry {
     private String extra;
     private boolean valid;
     private String rawLine;
+    private final BooleanProperty highlighted = new SimpleBooleanProperty(false);
+    private String groupKey;
 
     public LogEntry(String date, String file, String level, String message, String context, String extra) {
         this(date, file, level, message, context, extra, true, null);
@@ -55,5 +60,25 @@ public class LogEntry {
 
     public String getRawLine() {
         return rawLine;
+    }
+
+    public boolean isHighlighted() {
+        return highlighted.get();
+    }
+
+    public void setHighlighted(boolean value) {
+        highlighted.set(value);
+    }
+
+    public BooleanProperty highlightedProperty() {
+        return highlighted;
+    }
+
+    public String getGroupKey() {
+        return groupKey;
+    }
+
+    public void setGroupKey(String groupKey) {
+        this.groupKey = groupKey;
     }
 }

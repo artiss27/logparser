@@ -100,4 +100,23 @@ public class PagedLogLoader {
     public void reset() {
         filePointer = file.length();
     }
+
+    public List<LogEntry> loadNewLines(long previousSize) throws IOException {
+        List<LogEntry> newEntries = new ArrayList<>();
+
+        if (previousSize >= file.length()) return newEntries;
+
+        try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
+            raf.seek(previousSize);
+
+            String line;
+            while ((line = raf.readLine()) != null) {
+                String decoded = new String(line.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
+                LogEntry entry = parser.parseLine(decoded);
+                newEntries.add(entry != null ? entry : new LogEntry("", "", "INVALID", "", "", "", false, decoded));
+            }
+        }
+
+        return newEntries;
+    }
 }
