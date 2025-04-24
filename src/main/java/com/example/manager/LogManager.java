@@ -1,8 +1,15 @@
 package com.example.manager;
 
 import com.example.model.LogEntry;
+import com.example.model.Profile;
 import com.example.parser.LogParser;
+import com.example.remote.SftpRemoteFileAccessor;
 import com.example.utils.PagedLogLoader;
+import com.example.remote.RemoteFileAccessor;
+import com.example.remote.RemotePagedLogLoader;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
+import javafx.beans.binding.Bindings;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -14,15 +21,13 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
+import javafx.util.Duration;
 
 import java.io.File;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
-import javafx.animation.KeyFrame;
-import javafx.animation.Timeline;
-import javafx.beans.binding.Bindings;
-import javafx.util.Duration;
+import java.util.function.Consumer;
 
 public class LogManager {
 
@@ -40,8 +45,9 @@ public class LogManager {
     private FilteredList<LogEntry> filteredData;
     private final ProgressBar progressBar = new ProgressBar();
     private final Button loadMoreButton = new Button("Load more");
-    private PagedLogLoader pagedLoader;
+    private Object pagedLoader;
     private final Map<String, Boolean> groupColorMap = new HashMap<>();
+    private Object currentLoader;
 
     public LogManager(MainLayoutManager layoutManager) {
         this.layoutManager = layoutManager;
@@ -235,56 +241,94 @@ public class LogManager {
         return table;
     }
 
-    public void loadLogsFromFile(String fileName) {
+    // LogManager.java
+    public void loadLogsFromFile(String path, boolean remote) {
+        layoutManager.showLoading(true); // 🔥 показываем индикатор
         clearLogs();
-        File file = new File(fileName);
-        if (!file.exists() || file.isDirectory()) return;
 
-        pagedLoader = new PagedLogLoader(file, activeParser);
-        pagedLoader.reset();
+        try {
+            if (remote) {
+                Profile profile = layoutManager.getProfileManager().getSelectedProfile();
+                if (profile == null) return;
 
-        progressBar.setVisible(true);
-        loadMoreButton.setVisible(false);
+                // 🔧 создаем accessor с полным путем к файлу, а не просто к папке
+                RemoteFileAccessor accessor = new SftpRemoteFileAccessor(
+                        profile.getHost(),
+                        profile.getPort(),
+                        profile.getUsername(),
+                        profile.getPassword(),
+                        path, // <- здесь path уже с именем файла
+                        activeParser
+                );
 
-        pagedLoader.loadNextPageAsync(entries -> {
-            if (entries != null && !entries.isEmpty()) {
-                masterData.addAll(entries);
-                appendLoadMoreMarker();
-                autoResizeColumns();
+                System.out.println("📥 Loading remote file: " + path);
+                pagedLoader = new RemotePagedLogLoader(accessor, activeParser);
+            } else {
+                File file = new File(path);
+                if (!file.exists() || file.isDirectory()) return;
+                pagedLoader = new PagedLogLoader(file, activeParser);
             }
-            progressBar.setVisible(false);
-            loadMoreButton.setVisible(pagedLoader.hasMore());
-        }, error -> {
-            error.printStackTrace();
-            progressBar.setVisible(false);
-        });
+
+            if (pagedLoader instanceof PagedLogLoader pl) pl.reset();
+            if (pagedLoader instanceof RemotePagedLogLoader rpl) rpl.reset();
+
+            progressBar.setVisible(true);
+            loadMoreButton.setVisible(false);
+
+            Consumer<List<LogEntry>> onSuccess = entries -> {
+                if (entries != null && !entries.isEmpty()) {
+                    masterData.addAll(entries);
+                    appendLoadMoreMarker();
+                    autoResizeColumns();
+                }
+                layoutManager.showLoading(false); // 🔥 скрываем после завершения
+                progressBar.setVisible(false);
+                loadMoreButton.setVisible(hasMore());
+            };
+
+            Consumer<Throwable> onError = error -> {
+                error.printStackTrace();
+                progressBar.setVisible(false);
+                layoutManager.showLoading(false); // 🔥 скрываем при ошибке
+            };
+
+            if (pagedLoader instanceof PagedLogLoader pl) pl.loadNextPageAsync(onSuccess, onError);
+            if (pagedLoader instanceof RemotePagedLogLoader rpl) rpl.loadNextPageAsync(onSuccess, onError);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private boolean hasMore() {
+        if (pagedLoader instanceof PagedLogLoader pl) return pl.hasMore();
+        if (pagedLoader instanceof RemotePagedLogLoader rpl) return rpl.hasMore();
+        return false;
     }
 
     private boolean isLoading = false;
 
     private void loadNextPage() {
-        isLoading = true;
         progressBar.setVisible(true);
         loadMoreButton.setVisible(false);
 
-        pagedLoader.loadNextPageAsync(entries -> {
-            System.out.println("✅ Loaded entries: " + entries.size());
+        Consumer<List<LogEntry>> onSuccess = entries -> {
             if (entries != null && !entries.isEmpty()) {
                 masterData.addAll(entries);
                 appendLoadMoreMarker();
                 autoResizeColumns();
             }
-
             progressBar.setVisible(false);
-            isLoading = false;
-            loadMoreButton.setVisible(pagedLoader.hasMore());
+            loadMoreButton.setVisible(hasMore());
+        };
 
-        }, error -> {
+        Consumer<Throwable> onError = error -> {
             error.printStackTrace();
-            isLoading = false;
             progressBar.setVisible(false);
-            loadMoreButton.setVisible(false);
-        });
+        };
+
+        if (pagedLoader instanceof PagedLogLoader pl) pl.loadNextPageAsync(onSuccess, onError);
+        if (pagedLoader instanceof RemotePagedLogLoader rpl) rpl.loadNextPageAsync(onSuccess, onError);
     }
 
     private void updateFilters() {
@@ -386,16 +430,23 @@ public class LogManager {
     public void clearLogs() {
         masterData.clear();
         layoutManager.getDetailManager().showLogDetails(null, null);
+        if (pagedLoader instanceof RemotePagedLogLoader rpl) {
+            rpl.close(); // 🔥 явно закрываем сессию
+        }
     }
 
     private void appendLoadMoreMarker() {
         // Удаляем предыдущие маркеры, если есть
         masterData.removeIf(entry -> "LM".equals(entry.getLevel()) || "-".equals(entry.getLevel()));
 
-        if (pagedLoader != null && pagedLoader.hasMore()) {
+        if (pagedLoader instanceof PagedLogLoader pl && pl.hasMore()) {
             LogEntry marker = new LogEntry("", "", "LM", "", "", "", true, "");
             LogEntry spacer = new LogEntry("", "", "-", "", "", "", true, "");
-
+            masterData.add(spacer);
+            masterData.add(marker);
+        } else if (pagedLoader instanceof RemotePagedLogLoader rpl && rpl.hasMore()) {
+            LogEntry marker = new LogEntry("", "", "LM", "", "", "", true, "");
+            LogEntry spacer = new LogEntry("", "", "-", "", "", "", true, "");
             masterData.add(spacer);
             masterData.add(marker);
         }
@@ -441,5 +492,30 @@ public class LogManager {
 
     public LogParser getActiveParser() {
         return activeParser;
+    }
+
+    public void setCurrentFile(Profile profile, String fileName) {
+        clearLogs();
+
+        try {
+            String fullPath = profile.isRemote()
+                    ? profile.getPath() + "/" + fileName
+                    : new File(profile.getPath(), fileName).getAbsolutePath();
+
+            loadLogsFromFile(fullPath, profile.isRemote());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void closeLoaderIfNeeded() {
+        try {
+            if (pagedLoader instanceof RemotePagedLogLoader rpl) {
+                rpl.close();
+                System.out.println("🔌 RemotePagedLogLoader closed.");
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 }

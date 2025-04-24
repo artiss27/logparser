@@ -1,22 +1,28 @@
 package com.example.manager;
 
-import com.example.model.Profile;
 import com.example.watcher.LogFileWatcher;
+import com.example.watcher.RemoteLogWatcher;
 import javafx.geometry.Orientation;
+import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.SplitPane;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 import java.io.File;
 
 public class MainLayoutManager {
 
+    private final StackPane root;
     private final SplitPane mainLayout;
     private final LogManager logManager;
     private final DetailManager detailManager;
     private final ProfileManager profileManager;
     private final FileManager fileManager;
 
-    private final LogFileWatcher logFileWatcher;
+    private final LogFileWatcher localLogWatcher;
+    private final RemoteLogWatcher remoteLogWatcher;
+
+    private final ProgressIndicator loadingIndicator;
 
     public MainLayoutManager() {
         mainLayout = new SplitPane();
@@ -27,26 +33,39 @@ public class MainLayoutManager {
         profileManager = new ProfileManager();
         fileManager = new FileManager(this, profileManager);
 
-        // Watcher
-        logFileWatcher = new LogFileWatcher(fileManager, logManager);
+        // Watchers
+        localLogWatcher = new LogFileWatcher(fileManager, logManager);
+        remoteLogWatcher = new RemoteLogWatcher(this, fileManager, logManager);
 
-        // 🔧 Объединённая логика выбора профиля
         profileManager.setOnProfileSelected(profile -> {
-            fileManager.getFileNames().clear();              // очищаем список файлов
-            logManager.clearLogs();                          // очищаем логи
-            if (profile != null) {
-                fileManager.getFormatSelector().setValue(profile.getFormat());        // выбираем формат
-                logManager.setActiveParser(profile.getFormat());                      // устанавливаем парсер
-                fileManager.loadFileList(profile);                                    // загружаем список файлов
+            fileManager.getFileNames().clear();
+            logManager.clearLogs();
 
-                File path = new File(profile.getPath());
-                if (path.exists() && path.isDirectory()) {
-                    logFileWatcher.startWatching(path);                               // запускаем watcher
+            showLoading(true); // 🔥 показываем лоадер
+
+            if (profile != null) {
+                fileManager.getFormatSelector().setValue(profile.getFormat());
+                logManager.setActiveParser(profile.getFormat());
+                fileManager.loadFileList(profile);
+
+                localLogWatcher.stopWatching();
+                remoteLogWatcher.stopWatching();
+
+                if (profile.isRemote()) {
+                    if (profile.getHost() != null && !profile.getHost().isBlank()) {
+                        remoteLogWatcher.startWatching(profile);
+                    }
+                } else {
+                    File path = new File(profile.getPath());
+                    if (path.exists() && path.isDirectory()) {
+                        localLogWatcher.startWatching(path);
+                    }
                 }
             }
+
+            showLoading(false); // 🔥 скрываем лоадер
         });
 
-        // UI разметка
         VBox leftPanel = new VBox(10, profileManager.getProfilePane(), fileManager.getFileListPane());
         VBox centerPanel = logManager.getLogViewPane();
 
@@ -57,10 +76,21 @@ public class MainLayoutManager {
 
         mainLayout.getItems().addAll(leftPanel, rightPanel);
         mainLayout.setDividerPositions(0.2);
+
+        loadingIndicator = new ProgressIndicator();
+        loadingIndicator.setVisible(false);
+        loadingIndicator.setMaxSize(100, 100);
+
+        root = new StackPane(mainLayout, loadingIndicator);
     }
 
-    public SplitPane getMainLayout() {
-        return mainLayout;
+    public StackPane getMainLayout() {
+        return root;
+    }
+
+    public void showLoading(boolean show) {
+        loadingIndicator.setVisible(show);
+        mainLayout.setDisable(show); // Опционально, чтобы не давать пользователю взаимодействовать во время загрузки
     }
 
     public LogManager getLogManager() {
@@ -80,6 +110,8 @@ public class MainLayoutManager {
     }
 
     public void shutdown() {
-        logFileWatcher.stopWatching(); // корректное завершение потока
+        localLogWatcher.stopWatching();
+        remoteLogWatcher.stopWatching();
+        logManager.clearLogs();
     }
 }

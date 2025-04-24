@@ -20,7 +20,7 @@ public class LogFileWatcher {
     private static final long SCAN_INTERVAL_SECONDS = 5;
 
     // 🔧 daemon thread — не блокирует завершение JVM
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+    private ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r);
         t.setDaemon(true);
         return t;
@@ -36,6 +36,12 @@ public class LogFileWatcher {
     }
 
     public void startWatching(File directory) {
+        stopWatching();
+        scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r);
+            t.setDaemon(true);
+            return t;
+        });
         scheduler.scheduleAtFixedRate(() -> {
             File[] files = directory.listFiles((dir, name) -> !name.startsWith("."));
             if (files == null) return;
@@ -49,7 +55,7 @@ public class LogFileWatcher {
                 // 🔧 Новый файл
                 if (previousOffset == null) {
                     fileReadOffsets.put(file, currentSize);
-                    Platform.runLater(() -> fileManager.addNewFile(file));
+                    Platform.runLater(() ->  fileManager.addNewFile(file.getName(), file.length(), true));
                     continue;
                 }
 
@@ -57,13 +63,19 @@ public class LogFileWatcher {
                 if (previousOffset < currentSize) {
                     fileReadOffsets.put(file, currentSize); // сразу обновляем offset
 
+                    System.out.println("📁 File changed: " + file.getName());
+                    System.out.println("🧷 Previous offset: " + previousOffset + ", Current size: " + currentSize);
+
                     Platform.runLater(() -> {
                         String selectedFile = fileManager.getSelectedFileName();
+
+                        System.out.println("▶ Selected file: " + selectedFile);
 
                         if (selectedFile != null && selectedFile.equals(file.getName())) {
                             try {
                                 PagedLogLoader loader = new PagedLogLoader(file, logManager.getActiveParser());
                                 List<LogEntry> newEntries = loader.loadNewLines(previousOffset);
+                                System.out.println("📥 Loaded " + newEntries.size() + " new entries from " + file.getName());
                                 logManager.prependLogEntries(newEntries);
                             } catch (IOException e) {
                                 e.printStackTrace();
@@ -78,6 +90,8 @@ public class LogFileWatcher {
     }
 
     public void stopWatching() {
-        scheduler.shutdownNow();
+        if (scheduler != null && !scheduler.isShutdown()) {
+            scheduler.shutdownNow();
+        }
     }
 }
