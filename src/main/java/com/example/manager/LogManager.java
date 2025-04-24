@@ -22,8 +22,10 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
 import javafx.util.Duration;
+import javafx.concurrent.Task;
 
 import java.io.File;
+import java.io.IOException;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -43,7 +45,6 @@ public class LogManager {
     private final Map<String, LogParser> parsers = new HashMap<>();
     private LogParser activeParser;
     private FilteredList<LogEntry> filteredData;
-    private final ProgressBar progressBar = new ProgressBar();
     private final Button loadMoreButton = new Button("Load more");
     private Object pagedLoader;
     private final Map<String, Boolean> groupColorMap = new HashMap<>();
@@ -251,18 +252,45 @@ public class LogManager {
                 Profile profile = layoutManager.getProfileManager().getSelectedProfile();
                 if (profile == null) return;
 
-                // 🔧 создаем accessor с полным путем к файлу, а не просто к папке
                 RemoteFileAccessor accessor = new SftpRemoteFileAccessor(
                         profile.getHost(),
                         profile.getPort(),
                         profile.getUsername(),
                         profile.getPassword(),
-                        path, // <- здесь path уже с именем файла
+                        path,
                         activeParser
                 );
 
-                System.out.println("📥 Loading remote file: " + path);
-                pagedLoader = new RemotePagedLogLoader(accessor, activeParser);
+                Task<RemotePagedLogLoader> connectTask = new Task<>() {
+                    @Override
+                    protected RemotePagedLogLoader call() throws Exception {
+                        return new RemotePagedLogLoader(accessor, activeParser);
+                    }
+                };
+
+                connectTask.setOnSucceeded(e -> {
+                    layoutManager.showLoading(false); // ✅ прячем лоадер
+                    pagedLoader = connectTask.getValue();
+
+                    if (pagedLoader instanceof RemotePagedLogLoader rpl) {
+                        try {
+                            rpl.reset();
+                        } catch (IOException ex) {
+                            ex.printStackTrace();
+                        }
+                    }
+
+                    loadPageAsync(); // загружаем первую страницу
+                });
+
+                connectTask.setOnFailed(e -> {
+                    layoutManager.showLoading(false);
+                    Throwable ex = connectTask.getException();
+                    ex.printStackTrace();
+                });
+
+                new Thread(connectTask).start();
+                return; // выход, чтобы не дублировать дальше
             } else {
                 File file = new File(path);
                 if (!file.exists() || file.isDirectory()) return;
@@ -272,7 +300,6 @@ public class LogManager {
             if (pagedLoader instanceof PagedLogLoader pl) pl.reset();
             if (pagedLoader instanceof RemotePagedLogLoader rpl) rpl.reset();
 
-            progressBar.setVisible(true);
             loadMoreButton.setVisible(false);
 
             Consumer<List<LogEntry>> onSuccess = entries -> {
@@ -282,13 +309,11 @@ public class LogManager {
                     autoResizeColumns();
                 }
                 layoutManager.showLoading(false); // 🔥 скрываем после завершения
-                progressBar.setVisible(false);
                 loadMoreButton.setVisible(hasMore());
             };
 
             Consumer<Throwable> onError = error -> {
                 error.printStackTrace();
-                progressBar.setVisible(false);
                 layoutManager.showLoading(false); // 🔥 скрываем при ошибке
             };
 
@@ -300,6 +325,29 @@ public class LogManager {
         }
     }
 
+    private void loadPageAsync() {
+        layoutManager.showLoading(true);
+        loadMoreButton.setVisible(false);
+
+        Consumer<List<LogEntry>> onSuccess = entries -> {
+            if (entries != null && !entries.isEmpty()) {
+                masterData.addAll(entries);
+                appendLoadMoreMarker();
+                autoResizeColumns();
+            }
+            layoutManager.showLoading(false);
+            loadMoreButton.setVisible(hasMore());
+        };
+
+        Consumer<Throwable> onError = error -> {
+            error.printStackTrace();
+            layoutManager.showLoading(false);
+        };
+
+        if (pagedLoader instanceof PagedLogLoader pl) pl.loadNextPageAsync(onSuccess, onError);
+        if (pagedLoader instanceof RemotePagedLogLoader rpl) rpl.loadNextPageAsync(onSuccess, onError);
+    }
+
     private boolean hasMore() {
         if (pagedLoader instanceof PagedLogLoader pl) return pl.hasMore();
         if (pagedLoader instanceof RemotePagedLogLoader rpl) return rpl.hasMore();
@@ -309,7 +357,7 @@ public class LogManager {
     private boolean isLoading = false;
 
     private void loadNextPage() {
-        progressBar.setVisible(true);
+        layoutManager.showLoading(true);
         loadMoreButton.setVisible(false);
 
         Consumer<List<LogEntry>> onSuccess = entries -> {
@@ -318,13 +366,13 @@ public class LogManager {
                 appendLoadMoreMarker();
                 autoResizeColumns();
             }
-            progressBar.setVisible(false);
+            layoutManager.showLoading(false);
             loadMoreButton.setVisible(hasMore());
         };
 
         Consumer<Throwable> onError = error -> {
             error.printStackTrace();
-            progressBar.setVisible(false);
+            layoutManager.showLoading(false);
         };
 
         if (pagedLoader instanceof PagedLogLoader pl) pl.loadNextPageAsync(onSuccess, onError);

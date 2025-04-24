@@ -19,6 +19,11 @@ public class MainApp extends Application {
         primaryStage.setTitle("Log Parser");
         primaryStage.setScene(scene);
         primaryStage.show();
+
+        // 🔍 Отслеживаем активность окна
+        primaryStage.focusedProperty().addListener((obs, wasFocused, isNowFocused) -> {
+            layoutManager.setWindowFocused(isNowFocused);
+        });
     }
 
     @Override

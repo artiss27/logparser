@@ -64,19 +64,17 @@ public class ProfileManager {
             }
         });
 
-        profileSelector.setOnAction(e -> {
-            if (profileSelectedCallback != null) {
-                Profile selected = getSelectedProfile();
-                if (selected != null) {
-                    profileSelectedCallback.accept(selected);
-                }
+        profileSelector.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
+            if (profileSelectedCallback != null && newVal != null) {
+                profileSelectedCallback.accept(newVal);
             }
         });
 
         Button addButton = new Button("+");
         addButton.setOnAction(e -> openAddProfileDialog());
 
-        Button editButton = new Button("✏️");
+        Button editButton = new Button("✎");
+        editButton.setStyle("-fx-font-size: 14px;");
         editButton.setOnAction(e -> openEditProfileDialog());
 
         Button deleteButton = new Button("-");

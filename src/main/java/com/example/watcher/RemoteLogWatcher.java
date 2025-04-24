@@ -34,6 +34,7 @@ public class RemoteLogWatcher {
     private Session session;
     private SftpRemoteFileAccessor sftpAccessor;
     private final MainLayoutManager layoutManager;
+    private volatile boolean active = true;
 
     public RemoteLogWatcher(MainLayoutManager layoutManager, FileManager fileManager, LogManager logManager) {
         this.layoutManager = layoutManager;
@@ -43,7 +44,9 @@ public class RemoteLogWatcher {
 
     public void startWatching(Profile profile) {
         stopWatching(); // ensure no duplicates
+        this.layoutManager.setFirstScanProfile(true);
         this.activeProfile = profile;
+        this.remoteFileSizes.clear();
 
         if (scheduler == null || scheduler.isShutdown() || scheduler.isTerminated()) {
             scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -88,17 +91,30 @@ public class RemoteLogWatcher {
     }
 
     private void checkRemoteFiles() {
+        if (!active) return;
+
+        if (this.layoutManager.getFirstScanProfile()) {
+            this.layoutManager.showLoading(true);
+            this.layoutManager.setFirstScanProfile(false);
+        }
+        Platform.runLater(() -> layoutManager.showScanIndicator(true));
         try {
             if (sftpAccessor == null) {
-                sftpAccessor = new SftpRemoteFileAccessor(
-                        activeProfile.getHost(),
-                        activeProfile.getPort(),
-                        activeProfile.getUsername(),
-                        activeProfile.getPassword(),
-                        activeProfile.getPath(),
-                        logManager.getActiveParser()
-                );
-                sftpAccessor.connect();
+                try {
+                    sftpAccessor = new SftpRemoteFileAccessor(
+                            activeProfile.getHost(),
+                            activeProfile.getPort(),
+                            activeProfile.getUsername(),
+                            activeProfile.getPassword(),
+                            activeProfile.getPath(),
+                            logManager.getActiveParser()
+                    );
+                    sftpAccessor.connect();
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                    Platform.runLater(() -> layoutManager.showError("Connection Error", "Failed to connect to SFTP server:\n" + ex.getMessage()));
+                    return;
+                }
             }
 
             Vector<ChannelSftp.LsEntry> entries = sftpAccessor.getSftpChannel().ls(activeProfile.getPath());
@@ -145,6 +161,13 @@ public class RemoteLogWatcher {
         } catch (Exception e) {
             System.err.println("❌ Remote watch failed: " + e.getMessage());
             e.printStackTrace();
+        } finally {
+            this.layoutManager.showLoading(false);
+            Platform.runLater(() -> layoutManager.showScanIndicator(false));
         }
+    }
+
+    public void setActive(boolean active) {
+        this.active = active;
     }
 }

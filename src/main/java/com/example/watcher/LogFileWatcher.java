@@ -2,6 +2,7 @@ package com.example.watcher;
 
 import com.example.manager.FileManager;
 import com.example.manager.LogManager;
+import com.example.manager.MainLayoutManager;
 import com.example.model.LogEntry;
 import com.example.utils.PagedLogLoader;
 import javafx.application.Platform;
@@ -18,6 +19,7 @@ import java.util.concurrent.TimeUnit;
 public class LogFileWatcher {
 
     private static final long SCAN_INTERVAL_SECONDS = 5;
+    private volatile boolean active = true;
 
     // 🔧 daemon thread — не блокирует завершение JVM
     private ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -29,62 +31,72 @@ public class LogFileWatcher {
     private final Map<File, Long> fileReadOffsets = new HashMap<>();
     private final FileManager fileManager;
     private final LogManager logManager;
+    private final MainLayoutManager layoutManager; // 👈 добавляем
 
-    public LogFileWatcher(FileManager fileManager, LogManager logManager) {
+    public LogFileWatcher(MainLayoutManager layoutManager, FileManager fileManager, LogManager logManager) {
+        this.layoutManager = layoutManager; // 👈 инициализируем
         this.fileManager = fileManager;
         this.logManager = logManager;
     }
 
     public void startWatching(File directory) {
         stopWatching();
+        this.layoutManager.setFirstScanProfile(true);
         scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r);
             t.setDaemon(true);
             return t;
         });
         scheduler.scheduleAtFixedRate(() -> {
-            File[] files = directory.listFiles((dir, name) -> !name.startsWith("."));
-            if (files == null) return;
+            if (!active) return;
 
-            for (File file : files) {
-                if (!file.isFile()) continue;
+            if (this.layoutManager.getFirstScanProfile()) {
+                this.layoutManager.showLoading(true);
+                this.layoutManager.setFirstScanProfile(false);
+            }
+            Platform.runLater(() -> layoutManager.showScanIndicator(true));
+            try {
+//                Thread.sleep(500);
+                File[] files = directory.listFiles((dir, name) -> !name.startsWith("."));
+                if (files == null) return;
 
-                long currentSize = file.length();
-                Long previousOffset = fileReadOffsets.get(file);
+                for (File file : files) {
+                    if (!file.isFile()) continue;
 
-                // 🔧 Новый файл
-                if (previousOffset == null) {
-                    fileReadOffsets.put(file, currentSize);
-                    Platform.runLater(() ->  fileManager.addNewFile(file.getName(), file.length(), true));
-                    continue;
-                }
+                    long currentSize = file.length();
+                    Long previousOffset = fileReadOffsets.get(file);
 
-                // 🔧 Файл изменён
-                if (previousOffset < currentSize) {
-                    fileReadOffsets.put(file, currentSize); // сразу обновляем offset
+                    if (previousOffset == null) {
+                        fileReadOffsets.put(file, currentSize);
+                        Platform.runLater(() -> fileManager.addNewFile(file.getName(), file.length(), true));
+                        continue;
+                    }
 
-                    System.out.println("📁 File changed: " + file.getName());
-                    System.out.println("🧷 Previous offset: " + previousOffset + ", Current size: " + currentSize);
+                    if (previousOffset < currentSize) {
+                        fileReadOffsets.put(file, currentSize);
 
-                    Platform.runLater(() -> {
-                        String selectedFile = fileManager.getSelectedFileName();
+                        Platform.runLater(() -> {
+                            String selectedFile = fileManager.getSelectedFileName();
 
-                        System.out.println("▶ Selected file: " + selectedFile);
-
-                        if (selectedFile != null && selectedFile.equals(file.getName())) {
-                            try {
-                                PagedLogLoader loader = new PagedLogLoader(file, logManager.getActiveParser());
-                                List<LogEntry> newEntries = loader.loadNewLines(previousOffset);
-                                System.out.println("📥 Loaded " + newEntries.size() + " new entries from " + file.getName());
-                                logManager.prependLogEntries(newEntries);
-                            } catch (IOException e) {
-                                e.printStackTrace();
+                            if (selectedFile != null && selectedFile.equals(file.getName())) {
+                                try {
+                                    PagedLogLoader loader = new PagedLogLoader(file, logManager.getActiveParser());
+                                    List<LogEntry> newEntries = loader.loadNewLines(previousOffset);
+                                    logManager.prependLogEntries(newEntries);
+                                } catch (IOException e) {
+                                    e.printStackTrace();
+                                }
+                            } else {
+                                fileManager.markFileAsUpdated(file.getName());
                             }
-                        } else {
-                            fileManager.markFileAsUpdated(file.getName());
-                        }
-                    });
+                        });
+                    }
                 }
+//            } catch (InterruptedException e) {
+//                throw new RuntimeException(e);
+            } finally {
+                this.layoutManager.showLoading(false);
+                Platform.runLater(() -> layoutManager.showScanIndicator(false));
             }
         }, 0, SCAN_INTERVAL_SECONDS, TimeUnit.SECONDS);
     }
@@ -93,5 +105,9 @@ public class LogFileWatcher {
         if (scheduler != null && !scheduler.isShutdown()) {
             scheduler.shutdownNow();
         }
+    }
+
+    public void setActive(boolean active) {
+        this.active = active;
     }
 }
