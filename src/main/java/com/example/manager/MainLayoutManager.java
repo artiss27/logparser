@@ -151,4 +151,8 @@ public class MainLayoutManager {
         alert.setContentText(message);
         alert.showAndWait();
     }
+
+    public RemoteLogWatcher getRemoteLogWatcher() {
+        return remoteLogWatcher;
+    }
 }

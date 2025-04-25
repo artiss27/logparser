@@ -23,6 +23,8 @@ import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
 import javafx.util.Duration;
 import javafx.concurrent.Task;
+import com.example.remote.SftpRemoteFileAccessor;
+import com.example.watcher.RemoteLogWatcher;
 
 import java.io.File;
 import java.io.IOException;
@@ -252,19 +254,31 @@ public class LogManager {
                 Profile profile = layoutManager.getProfileManager().getSelectedProfile();
                 if (profile == null) return;
 
-                RemoteFileAccessor accessor = new SftpRemoteFileAccessor(
-                        profile.getHost(),
-                        profile.getPort(),
-                        profile.getUsername(),
-                        profile.getPassword(),
-                        path,
-                        activeParser
-                );
+                // ✅ Пытаемся взять уже существующий sftpAccessor из RemoteLogWatcher
+                RemoteLogWatcher remoteWatcher = layoutManager.getRemoteLogWatcher();
+                SftpRemoteFileAccessor accessor = remoteWatcher.getSftpAccessor();
 
+                if (accessor == null) {
+                    System.out.println("🔄 No existing accessor found, creating new");
+                    accessor = new SftpRemoteFileAccessor(
+                            profile.getHost(),
+                            profile.getPort(),
+                            profile.getUsername(),
+                            profile.getPassword(),
+                            path,
+                            activeParser
+                    );
+                } else {
+                    System.out.println("♻️ Reusing existing SFTP accessor from RemoteLogWatcher");
+                    accessor.setRemotePath(path);
+                }
+
+                SftpRemoteFileAccessor finalAccessor = accessor;
                 Task<RemotePagedLogLoader> connectTask = new Task<>() {
                     @Override
                     protected RemotePagedLogLoader call() throws Exception {
-                        return new RemotePagedLogLoader(accessor, activeParser);
+                        System.out.println("📄 Remote path: " + path);
+                        return new RemotePagedLogLoader(finalAccessor, activeParser);
                     }
                 };
 
@@ -290,7 +304,7 @@ public class LogManager {
                 });
 
                 new Thread(connectTask).start();
-                return; // выход, чтобы не дублировать дальше
+                return;
             } else {
                 File file = new File(path);
                 if (!file.exists() || file.isDirectory()) return;
@@ -478,9 +492,9 @@ public class LogManager {
     public void clearLogs() {
         masterData.clear();
         layoutManager.getDetailManager().showLogDetails(null, null);
-        if (pagedLoader instanceof RemotePagedLogLoader rpl) {
-            rpl.close(); // 🔥 явно закрываем сессию
-        }
+//        if (pagedLoader instanceof RemotePagedLogLoader rpl) {
+//            rpl.close(); // 🔥 явно закрываем сессию
+//        }
     }
 
     private void appendLoadMoreMarker() {

@@ -19,7 +19,7 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
     private final int port;
     private final String username;
     private final String password;
-    private final String remotePath;
+    private String remotePath;
     private final LogParser parser;
 
     private Session session;
@@ -36,33 +36,53 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
 
     @Override
     public void connect() throws Exception {
-        if (session != null && session.isConnected()) return;
+        if (session != null && session.isConnected() && sftp != null && sftp.isConnected()) {
+            System.out.println("📡 Already connected: session and sftp channel are active.");
+            return;
+        }
 
-        JSch jsch = new JSch();
-        session = jsch.getSession(username, host, port);
-        session.setPassword(password);
+        if (session == null || !session.isConnected()) {
+            System.out.println("📢 NEW SFTP CHANNEL CREATED:");
+//            Thread.dumpStack();
 
-        Properties config = new Properties();
-        config.put("StrictHostKeyChecking", "no");
-        session.setConfig(config);
+            System.out.println("🔌 SFTP session.connect()");
+            JSch jsch = new JSch();
+            session = jsch.getSession(username, host, port);
+            session.setPassword(password);
 
-        System.out.println("🔌 SFTP session.connect()");
-        session.connect(5000);
-        System.out.println("🛰 Opening SFTP channel...");
-        Channel channel = session.openChannel("sftp");
-        channel.connect(3000);
-        System.out.println("✅ SFTP channel connected.");
-        sftp = (ChannelSftp) channel;
+            Properties config = new Properties();
+            config.put("StrictHostKeyChecking", "no");
+            session.setConfig(config);
+
+            session.connect(5000);
+        } else {
+            System.out.println("📡 Session already connected");
+        }
+
+        // 🔥 создаём канал только если его ещё нет или он отключён
+        if (sftp == null || !sftp.isConnected()) {
+            System.out.println("🛰 Opening SFTP channel...");
+            Channel channel = session.openChannel("sftp");
+            channel.connect(3000);
+            sftp = (ChannelSftp) channel;
+            System.out.println("✅ SFTP channel connected.");
+        } else {
+            System.out.println("📡 SFTP channel already connected");
+        }
     }
 
     @Override
     public void disconnect() {
         if (sftp != null && sftp.isConnected()) {
+            System.out.println("🛑 Disconnecting SFTP channel...");
             sftp.disconnect();
         }
         if (session != null && session.isConnected()) {
+            System.out.println("🛑 Disconnecting SFTP session...");
             session.disconnect();
         }
+        sftp = null;
+        session = null;
     }
 
     @Override
@@ -98,16 +118,8 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
         System.out.println("🔍 Reading remote file from offset: " + offset);
         List<LogEntry> entries = new ArrayList<>();
 
-        InputStream input = null;
-
-        try {
-            System.out.println("📡 Calling sftp.get(...) for: " + remotePath);
-            input = sftp.get(remotePath);
-            System.out.println("📨 Stream opened successfully");
-
-            if (input == null) {
-                throw new IOException("❌ InputStream is null — failed to open remote file.");
-            }
+        try (InputStream input = sftp.get(remotePath)) {
+            input.skip(offset); // ✅ Читаем с нужного места
 
             ByteArrayOutputStream buffer = new ByteArrayOutputStream();
             byte[] chunk = new byte[8192];
@@ -125,24 +137,6 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
             }
         } catch (Exception e) {
             e.printStackTrace();
-        } finally {
-            if (input != null) {
-                try {
-                    input.close();
-                    System.out.println("✅ InputStream closed.");
-                } catch (IOException e) {
-                    System.err.println("❌ Failed to close InputStream");
-                    e.printStackTrace();
-                }
-            }
-
-            try {
-                disconnect(); // очень важно
-                System.out.println("🔌 SFTP disconnected.");
-            } catch (Exception e) {
-                System.err.println("❌ Error while disconnecting SFTP");
-                e.printStackTrace();
-            }
         }
 
         return entries;
@@ -163,6 +157,13 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
     }
 
     public ChannelSftp getSftpChannel() {
+        if (sftp == null) {
+            System.out.println("⚠️ getSftpChannel() called but sftp is null!");
+        } else if (!sftp.isConnected()) {
+            System.out.println("⚠️ getSftpChannel() called but sftp is DISCONNECTED!");
+        } else {
+            System.out.println("✅ getSftpChannel(): returning existing active channel");
+        }
         return sftp;
     }
 
@@ -170,6 +171,8 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
         try {
             long fileSize = getFileSize();
             long offset = Math.max(0, fileSize - maxBytes);
+
+            System.out.println("📤 SFTP get(): " + remotePath); // ✅ лог пути
 
             try (InputStream input = sftp.get(remotePath);
                  ByteArrayOutputStream buffer = new ByteArrayOutputStream()) {
@@ -189,5 +192,10 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
             e.printStackTrace();
             return new byte[0];
         }
+    }
+
+    public void setRemotePath(String remotePath) {
+        this.remotePath = remotePath;
+        System.out.println("📄 Remote path set to: " + remotePath);
     }
 }

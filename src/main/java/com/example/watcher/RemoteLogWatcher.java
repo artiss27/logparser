@@ -98,24 +98,20 @@ public class RemoteLogWatcher {
             this.layoutManager.setFirstScanProfile(false);
         }
         Platform.runLater(() -> layoutManager.showScanIndicator(true));
+
         try {
             if (sftpAccessor == null) {
-                try {
-                    sftpAccessor = new SftpRemoteFileAccessor(
-                            activeProfile.getHost(),
-                            activeProfile.getPort(),
-                            activeProfile.getUsername(),
-                            activeProfile.getPassword(),
-                            activeProfile.getPath(),
-                            logManager.getActiveParser()
-                    );
-                    sftpAccessor.connect();
-                } catch (Exception ex) {
-                    ex.printStackTrace();
-                    Platform.runLater(() -> layoutManager.showError("Connection Error", "Failed to connect to SFTP server:\n" + ex.getMessage()));
-                    return;
-                }
+                sftpAccessor = new SftpRemoteFileAccessor(
+                        activeProfile.getHost(),
+                        activeProfile.getPort(),
+                        activeProfile.getUsername(),
+                        activeProfile.getPassword(),
+                        activeProfile.getPath(),
+                        logManager.getActiveParser()
+                );
             }
+
+            sftpAccessor.connect(); // ✅ будет подключаться только если нет соединения
 
             Vector<ChannelSftp.LsEntry> entries = sftpAccessor.getSftpChannel().ls(activeProfile.getPath());
 
@@ -129,14 +125,13 @@ public class RemoteLogWatcher {
                 if (previousSize == -1) {
                     remoteFileSizes.put(fileName, size);
                     Platform.runLater(() ->
-                            fileManager.addNewFile(fileName, size, false)  // 👈 Не помечаем новым
+                            fileManager.addNewFile(fileName, size, false)
                     );
                 } else if (size > previousSize) {
                     remoteFileSizes.put(fileName, size);
 
-                    // 👇 Асинхронное чтение чтобы не блокировать UI
                     new Thread(() -> {
-                        Platform.runLater(() -> layoutManager.showLoading(true)); // Показываем лоадер
+                        Platform.runLater(() -> layoutManager.showLoading(true));
 
                         String selected = fileManager.getSelectedFileName();
                         if (selected != null && selected.equals(fileName)) {
@@ -146,12 +141,12 @@ public class RemoteLogWatcher {
                             } catch (Exception ex) {
                                 ex.printStackTrace();
                             } finally {
-                                Platform.runLater(() -> layoutManager.showLoading(false)); // Скрываем лоадер
+                                Platform.runLater(() -> layoutManager.showLoading(false));
                             }
                         } else {
                             Platform.runLater(() -> {
                                 fileManager.markFileAsUpdated(fileName);
-                                layoutManager.showLoading(false); // Скрываем лоадер если файл не выбран
+                                layoutManager.showLoading(false);
                             });
                         }
                     }).start();
@@ -159,15 +154,19 @@ public class RemoteLogWatcher {
             }
 
         } catch (Exception e) {
-            System.err.println("❌ Remote watch failed: " + e.getMessage());
             e.printStackTrace();
+            Platform.runLater(() -> layoutManager.showError("Connection Error", "Failed to check remote files:\n" + e.getMessage()));
         } finally {
-            this.layoutManager.showLoading(false);
+            layoutManager.showLoading(false);
             Platform.runLater(() -> layoutManager.showScanIndicator(false));
         }
     }
 
     public void setActive(boolean active) {
         this.active = active;
+    }
+
+    public SftpRemoteFileAccessor getSftpAccessor() {
+        return sftpAccessor;
     }
 }
