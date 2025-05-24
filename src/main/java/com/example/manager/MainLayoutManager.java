@@ -10,6 +10,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import java.util.List;
 
 import java.io.File;
 
@@ -44,31 +45,50 @@ public class MainLayoutManager {
         remoteLogWatcher = new RemoteLogWatcher(this, fileManager, logManager);
 
         profileManager.setOnProfileSelected(profile -> {
-            showLoading(true); // 🔥 показываем лоадер
-            fileManager.getFileNames().clear();
-            logManager.clearLogs();
+            fileManager.getFileNames().clear();  // Очистить старый список
+            logManager.clearLogs();               // Очистить логи
+            localLogWatcher.stopWatching();
+            remoteLogWatcher.stopWatching();
 
             if (profile != null) {
                 fileManager.getFormatSelector().setValue(profile.getFormat());
                 logManager.setActiveParser(profile.getFormat());
-                fileManager.loadFileList(profile);
-
-                localLogWatcher.stopWatching();
-                remoteLogWatcher.stopWatching();
 
                 if (profile.isRemote()) {
-                    if (profile.getHost() != null && !profile.getHost().isBlank()) {
-                        remoteLogWatcher.startWatching(profile);
+                    // ======== РАБОТАЕМ С УДАЛЁННЫМ ПРОФИЛЕМ ==========
+                    RemoteLogWatcher watcher = getRemoteLogWatcher();
+                    List<String> cachedFiles = watcher.getFileListFromCache(profile);
+
+                    if (!cachedFiles.isEmpty()) {
+                        // ⚡ Показать файлы из кэша
+                        fileManager.getFileNames().setAll(cachedFiles);
+                        System.out.println("⚡ Showing cached remote file list for profile: " + profile.getId());
+                        showLoading(false); // сразу скрыть лоадер
+                    } else {
+                        // ❗ Нет кэша — показываем лоадер до получения списка
+                        showLoading(true);
                     }
+
+                    if (profile.getHost() != null && !profile.getHost().isBlank()) {
+                        watcher.startWatching(profile);  // вотчер сам загрузит и обновит
+                    }
+
                 } else {
+                    // ======== РАБОТАЕМ С ЛОКАЛЬНЫМ ПРОФИЛЕМ ==========
                     File path = new File(profile.getPath());
                     if (path.exists() && path.isDirectory()) {
-                        localLogWatcher.startWatching(path);
+                        localLogWatcher.startWatching(path); // локальный вотчер сам загрузит
+                        showLoading(true); // показать лоадер на старте
+                    } else {
+                        fileManager.getFileNames().clear();
+                        showLoading(false); // нет папки — нет файлов
                     }
                 }
+            } else {
+                // если нет профиля
+                fileManager.getFileNames().clear();
+                showLoading(false);
             }
-
-            showLoading(false); // 🔥 скрываем лоадер
         });
 
         VBox leftPanel = new VBox(10, profileManager.getProfilePane(), fileManager.getFileListPane());
@@ -123,6 +143,7 @@ public class MainLayoutManager {
     public void shutdown() {
         localLogWatcher.stopWatching();
         remoteLogWatcher.stopWatching();
+        remoteLogWatcher.fullDisconnect();
         logManager.clearLogs();
     }
 
@@ -154,5 +175,9 @@ public class MainLayoutManager {
 
     public RemoteLogWatcher getRemoteLogWatcher() {
         return remoteLogWatcher;
+    }
+
+    public void clearLogDisplay() {
+        getLogManager().clearLogs(); // если такой метод уже есть
     }
 }

@@ -25,12 +25,14 @@ import javafx.util.Duration;
 import javafx.concurrent.Task;
 import com.example.remote.SftpRemoteFileAccessor;
 import com.example.watcher.RemoteLogWatcher;
+import javafx.application.Platform;
 
 import java.io.File;
 import java.io.IOException;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 public class LogManager {
@@ -51,6 +53,7 @@ public class LogManager {
     private Object pagedLoader;
     private final Map<String, Boolean> groupColorMap = new HashMap<>();
     private Object currentLoader;
+    private final ObservableList<LogEntry> logEntries = FXCollections.observableArrayList();
 
     public LogManager(MainLayoutManager layoutManager) {
         this.layoutManager = layoutManager;
@@ -244,122 +247,69 @@ public class LogManager {
         return table;
     }
 
-    // LogManager.java
-    public void loadLogsFromFile(String path, boolean remote) {
-        layoutManager.showLoading(true); // 🔥 показываем индикатор
-        clearLogs();
+    public void loadLogsFromFile(String path, boolean isRemote) {
+        if (path == null) return;
 
-        try {
-            if (remote) {
-                Profile profile = layoutManager.getProfileManager().getSelectedProfile();
-                if (profile == null) return;
-
-                // ✅ Пытаемся взять уже существующий sftpAccessor из RemoteLogWatcher
-                RemoteLogWatcher remoteWatcher = layoutManager.getRemoteLogWatcher();
-                SftpRemoteFileAccessor accessor = remoteWatcher.getSftpAccessor();
-
-                if (accessor == null) {
-                    System.out.println("🔄 No existing accessor found, creating new");
-                    accessor = new SftpRemoteFileAccessor(
-                            profile.getHost(),
-                            profile.getPort(),
-                            profile.getUsername(),
-                            profile.getPassword(),
-                            path,
-                            activeParser
-                    );
-                } else {
-                    System.out.println("♻️ Reusing existing SFTP accessor from RemoteLogWatcher");
-                    accessor.setRemotePath(path);
-                }
-
-                SftpRemoteFileAccessor finalAccessor = accessor;
-                Task<RemotePagedLogLoader> connectTask = new Task<>() {
-                    @Override
-                    protected RemotePagedLogLoader call() throws Exception {
-                        System.out.println("📄 Remote path: " + path);
-                        return new RemotePagedLogLoader(finalAccessor, activeParser);
-                    }
-                };
-
-                connectTask.setOnSucceeded(e -> {
-                    layoutManager.showLoading(false); // ✅ прячем лоадер
-                    pagedLoader = connectTask.getValue();
-
-                    if (pagedLoader instanceof RemotePagedLogLoader rpl) {
-                        try {
-                            rpl.reset();
-                        } catch (IOException ex) {
-                            ex.printStackTrace();
-                        }
-                    }
-
-                    loadPageAsync(); // загружаем первую страницу
-                });
-
-                connectTask.setOnFailed(e -> {
-                    layoutManager.showLoading(false);
-                    Throwable ex = connectTask.getException();
-                    ex.printStackTrace();
-                });
-
-                new Thread(connectTask).start();
-                return;
-            } else {
-                File file = new File(path);
-                if (!file.exists() || file.isDirectory()) return;
-                pagedLoader = new PagedLogLoader(file, activeParser);
-            }
-
-            if (pagedLoader instanceof PagedLogLoader pl) pl.reset();
-            if (pagedLoader instanceof RemotePagedLogLoader rpl) rpl.reset();
-
-            loadMoreButton.setVisible(false);
-
-            Consumer<List<LogEntry>> onSuccess = entries -> {
-                if (entries != null && !entries.isEmpty()) {
-                    masterData.addAll(entries);
-                    appendLoadMoreMarker();
-                    autoResizeColumns();
-                }
-                layoutManager.showLoading(false); // 🔥 скрываем после завершения
-                loadMoreButton.setVisible(hasMore());
-            };
-
-            Consumer<Throwable> onError = error -> {
-                error.printStackTrace();
-                layoutManager.showLoading(false); // 🔥 скрываем при ошибке
-            };
-
-            if (pagedLoader instanceof PagedLogLoader pl) pl.loadNextPageAsync(onSuccess, onError);
-            if (pagedLoader instanceof RemotePagedLogLoader rpl) rpl.loadNextPageAsync(onSuccess, onError);
-
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void loadPageAsync() {
         layoutManager.showLoading(true);
-        loadMoreButton.setVisible(false);
+        layoutManager.clearLogDisplay();
 
-        Consumer<List<LogEntry>> onSuccess = entries -> {
-            if (entries != null && !entries.isEmpty()) {
-                masterData.addAll(entries);
-                appendLoadMoreMarker();
-                autoResizeColumns();
+        String fileName = new File(path).getName();
+        Profile profile = layoutManager.getProfileManager().getSelectedProfile();
+
+        // ==== КЕШИРОВАННЫЙ МОМЕНТАЛЬНЫЙ ПОКАЗ ====
+        if (isRemote && profile != null) {
+            RemoteLogWatcher watcher = layoutManager.getRemoteLogWatcher();
+            Map<String, List<LogEntry>> fileMap = watcher.getProfileFileCache().get(profile.getId());
+
+            if (fileMap != null && fileMap.containsKey(fileName)) {
+                List<LogEntry> cached = fileMap.get(fileName);
+                System.out.println("⚡ Cached logs loaded for: " + fileName);
+
+                // Мгновенно отображаем кеш, но не возвращаемся — сразу запускаем фоновую подгрузку!
+                Platform.runLater(() -> {
+                    logEntries.setAll(cached);
+                    masterData.setAll(cached);
+                    autoResizeColumns();
+                    layoutManager.showLoading(false); // можно убрать — если хочешь оставить индикатор до фона
+                });
             }
-            layoutManager.showLoading(false);
-            loadMoreButton.setVisible(hasMore());
+        }
+        // ==== ДАЛЬШЕ ВСЕГДА запускаем загрузку (для обновления) ====
+        Task<List<LogEntry>> task = new Task<>() {
+            @Override
+            protected List<LogEntry> call() throws Exception {
+                if (isRemote) {
+                    SftpRemoteFileAccessor accessor = layoutManager.getRemoteLogWatcher().getSftpAccessor();
+                    accessor.setRemotePath(path);
+                    RemotePagedLogLoader loader = new RemotePagedLogLoader(accessor, activeParser);
+                    List<LogEntry> loaded = loader.loadNextPage();
+                    // Кладём в кеш для профиля и файла:
+                    RemoteLogWatcher watcher = layoutManager.getRemoteLogWatcher();
+                    watcher.getProfileFileCache()
+                            .computeIfAbsent(profile.getId(), k -> new ConcurrentHashMap<>())
+                            .put(fileName, loaded);
+                    return loaded;
+                } else {
+                    PagedLogLoader loader = new PagedLogLoader(new File(path), activeParser);
+                    return loader.loadNextPage();
+                }
+            }
         };
 
-        Consumer<Throwable> onError = error -> {
-            error.printStackTrace();
+        task.setOnSucceeded(e -> {
+            List<LogEntry> loadedEntries = task.getValue();
+            System.out.println("🎯 Loaded entries in LogManager: " + loadedEntries.size());
+            masterData.setAll(loadedEntries);
+            autoResizeColumns();
             layoutManager.showLoading(false);
-        };
+        });
 
-        if (pagedLoader instanceof PagedLogLoader pl) pl.loadNextPageAsync(onSuccess, onError);
-        if (pagedLoader instanceof RemotePagedLogLoader rpl) rpl.loadNextPageAsync(onSuccess, onError);
+        task.setOnFailed(e -> {
+            layoutManager.showError("Log Load Failed", "Could not load logs from file:\n" + path);
+            layoutManager.showLoading(false);
+        });
+
+        new Thread(task).start();
     }
 
     private boolean hasMore() {
@@ -371,6 +321,10 @@ public class LogManager {
     private boolean isLoading = false;
 
     private void loadNextPage() {
+        loadPageAsync();
+    }
+
+    private void loadPageAsync() {
         layoutManager.showLoading(true);
         loadMoreButton.setVisible(false);
 

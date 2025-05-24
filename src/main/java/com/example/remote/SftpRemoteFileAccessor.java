@@ -167,23 +167,35 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
         return sftp;
     }
 
+    @Override
     public byte[] readLastBytes(int maxBytes) {
+        ChannelSftp localSftp = null;
         try {
-            long fileSize = getFileSize();
-            long offset = Math.max(0, fileSize - maxBytes);
+            if (session == null || !session.isConnected()) {
+                connect(); // session connect
+            }
+            // Открываем новый канал для чтения файла
+            Channel channel = session.openChannel("sftp");
+            channel.connect(3000);
+            localSftp = (ChannelSftp) channel;
 
-            System.out.println("📤 SFTP get(): " + remotePath); // ✅ лог пути
+            long fileSize = localSftp.lstat(remotePath).getSize();
+            if (fileSize == 0) return new byte[0];
+            long bytesToRead = Math.min(maxBytes, fileSize);
+            long startOffset = Math.max(0, fileSize - bytesToRead);
 
-            try (InputStream input = sftp.get(remotePath);
+            System.out.println("📤 SFTP get(): " + remotePath + " (offset=" + startOffset + ")");
+
+            try (InputStream input = localSftp.get(remotePath, null, startOffset);
                  ByteArrayOutputStream buffer = new ByteArrayOutputStream()) {
-
-                input.skip(offset);
 
                 byte[] chunk = new byte[8192];
                 int read;
+                long remaining = bytesToRead;
 
-                while ((read = input.read(chunk)) != -1) {
+                while (remaining > 0 && (read = input.read(chunk, 0, (int)Math.min(chunk.length, remaining))) != -1) {
                     buffer.write(chunk, 0, read);
+                    remaining -= read;
                 }
 
                 return buffer.toByteArray();
@@ -191,6 +203,10 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
         } catch (Exception e) {
             e.printStackTrace();
             return new byte[0];
+        } finally {
+            if (localSftp != null && localSftp.isConnected()) {
+                localSftp.disconnect();
+            }
         }
     }
 

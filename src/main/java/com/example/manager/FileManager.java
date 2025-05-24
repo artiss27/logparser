@@ -1,8 +1,10 @@
 package com.example.manager;
 
+import com.example.model.LogEntry;
 import com.example.model.Profile;
 import com.example.parser.OxLogParser;
 import com.example.parser.SymfonyLogParser;
+import com.example.watcher.RemoteLogWatcher;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.collections.transformation.FilteredList;
@@ -16,6 +18,7 @@ import javafx.scene.shape.Circle;
 import java.io.File;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class FileManager {
@@ -132,8 +135,18 @@ public class FileManager {
                 fileNames.add(path.getName() + " (" + size + ")");
             }
         } else {
-            // Заглушка для удалённых файлов — watcher сам добавит
+            RemoteLogWatcher watcher = layoutManager.getRemoteLogWatcher();
+            if (watcher != null) {
+                List<String> cachedFiles = watcher.getFileListFromCache(profile);
+                if (!cachedFiles.isEmpty()) {
+                    fileNames.setAll(cachedFiles); // ✅ заменить, а не добавлять!
+                    System.out.println("⚡ Loaded cached file list for profile: " + profile.getId());
+                } else {
+                    layoutManager.showLoading(true); // ✅ показывать лоадер только если кэш пустой
+                }
+            }
         }
+
         layoutManager.showLoading(false); // 🔥 скрываем после загрузки списка
     }
 
@@ -210,5 +223,15 @@ public class FileManager {
                 loadFileList(profile);
             }
         });
+    }
+
+    public void removeFile(String fileName) {
+        fileNames.removeIf(name -> name.startsWith(fileName));
+        updatedFiles.remove(fileName);
+        refreshFileListView();
+    }
+
+    public void showCachedFileList(List<String> cachedFiles) {
+        fileNames.setAll(cachedFiles);
     }
 }

@@ -14,9 +14,12 @@ import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
+import com.example.utils.CryptoUtils;
+import javax.crypto.SecretKey;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -120,11 +123,15 @@ public class ProfileManager {
     }
 
     private List<Profile> loadProfiles() {
-        File file = new File(PROFILE_FILE);
+        File file = new File(PROFILE_FILE.replace(".json", ".json.enc"));
         if (file.exists()) {
             try {
-                return mapper.readValue(file, new TypeReference<>() {});
-            } catch (IOException e) {
+                SecretKey key = CryptoUtils.getOrCreateKey();
+                byte[] encrypted = Files.readAllBytes(file.toPath());
+                byte[] decrypted = CryptoUtils.decrypt(encrypted, key);
+                // JSON to List<Profile>
+                return mapper.readValue(decrypted, new TypeReference<>() {});
+            } catch (Exception e) {
                 e.printStackTrace();
             }
         }
@@ -133,10 +140,13 @@ public class ProfileManager {
 
     private void saveProfiles() {
         try {
-            File file = new File(PROFILE_FILE);
+            SecretKey key = CryptoUtils.getOrCreateKey();
+            byte[] json = mapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(profiles);
+            byte[] encrypted = CryptoUtils.encrypt(json, key);
+            File file = new File(PROFILE_FILE.replace(".json", ".json.enc"));
             file.getParentFile().mkdirs();
-            mapper.writerWithDefaultPrettyPrinter().writeValue(file, profiles);
-        } catch (IOException e) {
+            Files.write(file.toPath(), encrypted);
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }

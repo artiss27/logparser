@@ -92,4 +92,8 @@ public class Profile {
     public String toString() {
         return name;
     }
+
+    public String getId() {
+        return host + ":" + port + "/" + username;
+    }
 }

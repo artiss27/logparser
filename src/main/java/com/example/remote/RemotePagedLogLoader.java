@@ -50,8 +50,9 @@ public class RemotePagedLogLoader {
             LogEntry entry = parser.parseLine(lines[i]);
             entries.add(entry != null ? entry : new LogEntry("", "", "INVALID", "", "", "", false, lines[i]));
         }
+        System.out.println("📦 RemotePagedLogLoader loaded " + entries.size() + " entries");
 
-        filePointer = 0;  // После первой загрузки устанавливаем в начало, так как чтение назад не поддерживается
+//        filePointer = 0;  // После первой загрузки устанавливаем в начало, так как чтение назад не поддерживается
         return entries;
     }
 
