@@ -94,7 +94,16 @@ public class RemoteLogWatcher {
 
             sftpAccessor.connect();
 
-            Vector<ChannelSftp.LsEntry> entries = sftpAccessor.getSftpChannel().ls(activeProfile.getPath());
+            Vector<ChannelSftp.LsEntry> entries;
+            ChannelSftp localSftp = null;
+            try {
+                Channel channel = sftpAccessor.getSession().openChannel("sftp");
+                channel.connect(3000);
+                localSftp = (ChannelSftp) channel;
+                entries = localSftp.ls(activeProfile.getPath());
+            } finally {
+                if (localSftp != null && localSftp.isConnected()) localSftp.disconnect();
+            }
             Set<String> currentFileNames = new HashSet<>();
 
             for (ChannelSftp.LsEntry entry : entries) {
