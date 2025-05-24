@@ -33,6 +33,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 public class LogManager {
@@ -54,6 +55,7 @@ public class LogManager {
     private final Map<String, Boolean> groupColorMap = new HashMap<>();
     private Object currentLoader;
     private final ObservableList<LogEntry> logEntries = FXCollections.observableArrayList();
+    private final AtomicInteger loadToken = new AtomicInteger(0);
 
     public LogManager(MainLayoutManager layoutManager) {
         this.layoutManager = layoutManager;
@@ -250,6 +252,9 @@ public class LogManager {
     public void loadLogsFromFile(String path, boolean isRemote) {
         if (path == null) return;
 
+        // Новый токен — увеличиваем при каждом новом запросе загрузки
+        int token = loadToken.incrementAndGet();
+
         layoutManager.showLoading(true);
         layoutManager.clearLogDisplay();
 
@@ -265,12 +270,11 @@ public class LogManager {
                 List<LogEntry> cached = fileMap.get(fileName);
                 System.out.println("⚡ Cached logs loaded for: " + fileName);
 
-                // Мгновенно отображаем кеш, но не возвращаемся — сразу запускаем фоновую подгрузку!
                 Platform.runLater(() -> {
                     logEntries.setAll(cached);
                     masterData.setAll(cached);
                     autoResizeColumns();
-                    layoutManager.showLoading(false); // можно убрать — если хочешь оставить индикатор до фона
+                    layoutManager.showLoading(false);
                 });
             }
         }
@@ -297,14 +301,17 @@ public class LogManager {
         };
 
         task.setOnSucceeded(e -> {
+            if (token != loadToken.get()) return;
             List<LogEntry> loadedEntries = task.getValue();
-            System.out.println("🎯 Loaded entries in LogManager: " + loadedEntries.size());
+            // Reset highlight
+            loadedEntries.forEach(entry -> entry.setHighlighted(false));
             masterData.setAll(loadedEntries);
             autoResizeColumns();
             layoutManager.showLoading(false);
         });
 
         task.setOnFailed(e -> {
+            if (token != loadToken.get()) return;
             layoutManager.showError("Log Load Failed", "Could not load logs from file:\n" + path);
             layoutManager.showLoading(false);
         });

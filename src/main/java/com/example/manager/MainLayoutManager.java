@@ -75,13 +75,23 @@ public class MainLayoutManager {
 
                 } else {
                     // ======== РАБОТАЕМ С ЛОКАЛЬНЫМ ПРОФИЛЕМ ==========
+//                    File path = new File(profile.getPath());
+//                    if (path.exists() && path.isDirectory()) {
+//                        localLogWatcher.startWatching(path); // локальный вотчер сам загрузит
+//                        showLoading(true); // показать лоадер на старте
+//                    } else {
+//                        fileManager.getFileNames().clear();
+//                        showLoading(false); // нет папки — нет файлов
+//                    }
                     File path = new File(profile.getPath());
                     if (path.exists() && path.isDirectory()) {
-                        localLogWatcher.startWatching(path); // локальный вотчер сам загрузит
-                        showLoading(true); // показать лоадер на старте
+                        showLoading(true);
+                        // ПЕРЕДАЧА ПРОФИЛЯ В FILEMANAGER
+                        fileManager.loadFileList(profile);
+                        localLogWatcher.startWatching(path);
                     } else {
                         fileManager.getFileNames().clear();
-                        showLoading(false); // нет папки — нет файлов
+                        showLoading(false);
                     }
                 }
             } else {
