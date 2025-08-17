@@ -38,3 +38,5 @@ build/
 
 ### Mac OS ###
 .DS_Store
+/javafx-sdk-21.0.8/
+/javafx-jmods-21.0.8/

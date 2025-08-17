@@ -20,6 +20,7 @@ import javax.crypto.SecretKey;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -130,7 +131,9 @@ public class ProfileManager {
                 byte[] encrypted = Files.readAllBytes(file.toPath());
                 byte[] decrypted = CryptoUtils.decrypt(encrypted, key);
                 // JSON to List<Profile>
-                return mapper.readValue(decrypted, new TypeReference<>() {});
+                List<Profile> list = mapper.readValue(decrypted, new TypeReference<>() {});
+                list.sort(Comparator.comparing(Profile::getName, String.CASE_INSENSITIVE_ORDER)); // ✅ сортировка
+                return list;
             } catch (Exception e) {
                 e.printStackTrace();
             }

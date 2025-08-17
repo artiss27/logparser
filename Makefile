@@ -1,6 +1,6 @@
 APP_NAME = LogParser
 MAIN_CLASS = com.example.MainApp
-JAVAFX_SDK = javafx-sdk-21.0.2
+JAVAFX_JMODS = javafx-jmods-21.0.8
 ICON_PATH = src/main/resources/icons/logparser.icns
 
 .PHONY: run package clean
@@ -25,7 +25,7 @@ package: clean
 		--icon $(ICON_PATH) \
 		--type dmg \
 		--dest ~/Downloads \
-		--module-path $(JAVAFX_SDK)/lib \
+		--module-path $(JAVAFX_JMODS) \
 		--add-modules javafx.controls,javafx.fxml \
 		--java-options "--enable-native-access=ALL-UNNAMED -Duser.home=$(shell echo $$HOME)" \
 		--verbose
