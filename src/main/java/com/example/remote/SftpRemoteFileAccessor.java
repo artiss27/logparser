@@ -36,7 +36,8 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
 
     @Override
     public void connect() throws Exception {
-        if (session != null && session.isConnected() && sftp != null && sftp.isConnected()) return;
+        if (isAlive()) return;
+
         if (session == null || !session.isConnected()) {
             System.out.println("🔌 SFTP session.connect()");
             JSch jsch = new JSch();
@@ -44,10 +45,13 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
             session.setPassword(password);
             Properties config = new Properties();
             config.put("StrictHostKeyChecking", "no");
+            config.put("PreferredAuthentications", "password");
             session.setConfig(config);
+            session.setServerAliveInterval(15000); // 🔁 ping every 15 sec
+            session.setServerAliveCountMax(3);
             session.connect(5000);
         }
-        // создаём канал если его нет или он отключён
+
         if (sftp == null || !sftp.isConnected()) {
             System.out.println("🛰 Opening SFTP channel...");
             Channel channel = session.openChannel("sftp");
@@ -112,10 +116,8 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
     public byte[] readLastBytes(int maxBytes) {
         ChannelSftp localSftp = null;
         try {
-            if (session == null || !session.isConnected()) {
-                connect(); // session connect
-            }
-            // Открываем новый канал для чтения файла
+            if (!isAlive()) connect();
+
             Channel channel = session.openChannel("sftp");
             channel.connect(3000);
             localSftp = (ChannelSftp) channel;
@@ -125,8 +127,6 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
             long bytesToRead = Math.min(maxBytes, fileSize);
             long startOffset = Math.max(0, fileSize - bytesToRead);
 
-            System.out.println("📤 SFTP get(): " + remotePath + " (offset=" + startOffset + ")");
-
             try (InputStream input = localSftp.get(remotePath, null, startOffset);
                  ByteArrayOutputStream buffer = new ByteArrayOutputStream()) {
 
@@ -134,38 +134,42 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
                 int read;
                 long remaining = bytesToRead;
 
-                while (remaining > 0 && (read = input.read(chunk, 0, (int)Math.min(chunk.length, remaining))) != -1) {
+                while (remaining > 0 && (read = input.read(chunk, 0, (int) Math.min(chunk.length, remaining))) != -1) {
                     buffer.write(chunk, 0, read);
                     remaining -= read;
                 }
 
                 return buffer.toByteArray();
             }
+
         } catch (Exception e) {
             e.printStackTrace();
-            return new byte[0]; // Возврат пустого массива в случае ошибки
+            return new byte[0];
         } finally {
-            if (localSftp != null && localSftp.isConnected()) {
-                localSftp.disconnect();
-            }
+            if (localSftp != null && localSftp.isConnected()) localSftp.disconnect();
         }
     }
 
     public List<LogEntry> readFromOffset(long offset) {
-        ChannelSftp localSftp = null;
         List<LogEntry> entries = new ArrayList<>();
+        ChannelSftp localSftp = null;
+
         try {
+            if (!isAlive()) connect();
             Channel channel = session.openChannel("sftp");
             channel.connect(3000);
             localSftp = (ChannelSftp) channel;
-            try (InputStream input = localSftp.get(remotePath)) {
-                input.skip(offset);
-                ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+
+            long fileSize = localSftp.lstat(remotePath).getSize();
+            if (offset >= fileSize) return entries;
+
+            try (InputStream input = localSftp.get(remotePath, null, offset);
+                 ByteArrayOutputStream buffer = new ByteArrayOutputStream()) {
+
                 byte[] chunk = new byte[8192];
                 int read;
-                while ((read = input.read(chunk)) != -1) {
-                    buffer.write(chunk, 0, read);
-                }
+                while ((read = input.read(chunk)) != -1) buffer.write(chunk, 0, read);
+
                 String[] lines = buffer.toString(StandardCharsets.UTF_8).split("\n");
                 for (String line : lines) {
                     String decoded = new String(line.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
@@ -173,6 +177,7 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
                     entries.add(entry != null ? entry : new LogEntry("", "", "INVALID", "", "", "", false, decoded));
                 }
             }
+
         } catch (Exception e) {
             e.printStackTrace();
         } finally {
@@ -201,4 +206,8 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
     }
 
     public Session getSession() { return session; }
+
+    public boolean isAlive() {
+        return session != null && session.isConnected() && sftp != null && sftp.isConnected();
+    }
 }

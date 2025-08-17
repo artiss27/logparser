@@ -2,6 +2,7 @@ package com.example;
 
 import com.example.manager.MainLayoutManager;
 import javafx.application.Application;
+import javafx.application.Platform;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
 
@@ -23,6 +24,15 @@ public class MainApp extends Application {
         // 🔍 Отслеживаем активность окна
         primaryStage.focusedProperty().addListener((obs, wasFocused, isNowFocused) -> {
             layoutManager.setWindowFocused(isNowFocused);
+        });
+
+        primaryStage.setOnCloseRequest(event -> {
+            System.out.println("🛑 Window closed — calling shutdown");
+            if (layoutManager != null) {
+                layoutManager.shutdown();
+            }
+            Platform.exit();
+            System.exit(0);
         });
     }
 

@@ -220,7 +220,13 @@ public class FileManager {
                 if (logs != null) {
                     for (File file : logs) file.delete();
                 }
-                loadFileList(profile);
+
+                // ✅ Очистка UI:
+                fileNames.clear();
+                updatedFiles.clear();
+                fileListView.getSelectionModel().clearSelection(); // сброс выбора
+                layoutManager.getLogManager().clearLogs();          // очистка таблицы
+                layoutManager.getDetailManager().showLogDetails(null, null); // очистка detail-панели
             }
         });
     }

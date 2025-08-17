@@ -92,18 +92,17 @@ public class RemoteLogWatcher {
                 );
             }
 
-            sftpAccessor.connect();
-
-            Vector<ChannelSftp.LsEntry> entries;
-            ChannelSftp localSftp = null;
-            try {
-                Channel channel = sftpAccessor.getSession().openChannel("sftp");
-                channel.connect(3000);
-                localSftp = (ChannelSftp) channel;
-                entries = localSftp.ls(activeProfile.getPath());
-            } finally {
-                if (localSftp != null && localSftp.isConnected()) localSftp.disconnect();
+            if (!sftpAccessor.isAlive()) {
+                System.out.println("⚠️ SFTP not alive, reconnecting...");
+                sftpAccessor.disconnect();
+                sftpAccessor.connect();
             }
+
+            Channel channel = sftpAccessor.getSession().openChannel("sftp");
+            channel.connect(3000);
+            ChannelSftp localSftp = (ChannelSftp) channel;
+            Vector<ChannelSftp.LsEntry> entries = localSftp.ls(activeProfile.getPath());
+            localSftp.disconnect();
             Set<String> currentFileNames = new HashSet<>();
 
             for (ChannelSftp.LsEntry entry : entries) {
@@ -177,33 +176,32 @@ public class RemoteLogWatcher {
         }
     }
 
+    private ScheduledExecutorService disconnectExecutor = Executors.newSingleThreadScheduledExecutor();
+
     public void setActive(boolean active) {
         this.active = active;
 
         if (!active) {
-            if (disconnectTimer != null) {
-                disconnectTimer.cancel();
-            }
-            disconnectTimer = new Timer(true);
-            disconnectTimer.schedule(new TimerTask() {
-                @Override
-                public void run() {
-                    System.out.println("\u23F3 Window inactive for a while, disconnecting SFTP...");
-                    stopWatching();
-                }
-            }, DISCONNECT_DELAY_MS);
+            disconnectExecutor.schedule(() -> {
+                System.out.println("\u23F3 Window inactive, disconnecting SFTP...");
+                stopWatching();
+            }, DISCONNECT_DELAY_MS, TimeUnit.MILLISECONDS);
         } else {
-            if (disconnectTimer != null) {
-                disconnectTimer.cancel();
-                disconnectTimer = null;
-            }
-
-            if (activeProfile != null) {
+            // активировали — пробуем переподключить
+            if (activeProfile != null && (sftpAccessor == null || !sftpAccessor.isAlive())) {
                 try {
-                    if (sftpAccessor != null) {
-                        sftpAccessor.connect();
-                        System.out.println("\uD83D\uDD01 Reconnected SFTP after focus gained");
+                    if (sftpAccessor == null) {
+                        sftpAccessor = new SftpRemoteFileAccessor(
+                                activeProfile.getHost(),
+                                activeProfile.getPort(),
+                                activeProfile.getUsername(),
+                                activeProfile.getPassword(),
+                                activeProfile.getPath(),
+                                logManager.getActiveParser()
+                        );
                     }
+                    sftpAccessor.connect();
+                    System.out.println("🔁 Reconnected SFTP after focus gain");
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
@@ -247,5 +245,17 @@ public class RemoteLogWatcher {
             sftpAccessor.disconnect();
             sftpAccessor = null;
         }
+    }
+
+    public void forceRefresh() {
+        if (activeProfile == null) return;
+
+        new Thread(() -> {
+            try {
+                checkRemoteFiles();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }).start();
     }
 }
