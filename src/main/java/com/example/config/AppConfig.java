@@ -13,6 +13,7 @@ public final class AppConfig {
     public static final int DEFAULT_PAGE_SIZE = 500;
     public static final int MAX_CACHE_SIZE_MB = 100;
     public static final int DEFAULT_BUFFER_SIZE = 8192;
+    public static final int MAX_INCREMENTAL_READ_MB = 10; // Maximum MB to read on file update
 
     // Remote Connection Configuration
     public static final int SFTP_CONNECT_TIMEOUT = 5000; // milliseconds

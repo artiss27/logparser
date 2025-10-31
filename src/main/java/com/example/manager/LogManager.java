@@ -280,33 +280,65 @@ public class LogManager {
             }
         }
         // ==== ДАЛЬШЕ ВСЕГДА запускаем загрузку (для обновления) ====
-        Task<List<LogEntry>> task = new Task<>() {
+        // Wrapper class to hold both loader and entries
+        class LoadResult {
+            final PagedLoader loader;
+            final List<LogEntry> entries;
+            LoadResult(PagedLoader loader, List<LogEntry> entries) {
+                this.loader = loader;
+                this.entries = entries;
+            }
+        }
+
+        Task<LoadResult> task = new Task<>() {
             @Override
-            protected List<LogEntry> call() throws Exception {
+            protected LoadResult call() throws Exception {
+                PagedLoader loader;
+                List<LogEntry> entries;
+
                 if (isRemote) {
                     SftpRemoteFileAccessor accessor = layoutManager.getRemoteLogWatcher().getSftpAccessor();
                     accessor.setRemotePath(path);
-                    RemotePagedLogLoader loader = new RemotePagedLogLoader(accessor, activeParser);
-                    List<LogEntry> loaded = loader.loadNextPage();
+                    loader = new RemotePagedLogLoader(accessor, activeParser);
+                    entries = loader.loadNextPage();
                     // Кладём в кеш для профиля и файла:
                     RemoteLogWatcher watcher = layoutManager.getRemoteLogWatcher();
                     watcher.getProfileFileCache()
                             .computeIfAbsent(profile.getId(), k -> new ConcurrentHashMap<>())
-                            .put(fileName, loaded);
-                    return loaded;
+                            .put(fileName, entries);
                 } else {
-                    PagedLogLoader loader = new PagedLogLoader(new File(path), activeParser);
-                    return loader.loadNextPage();
+                    loader = new PagedLogLoader(new File(path), activeParser);
+                    entries = loader.loadNextPage();
                 }
+
+                return new LoadResult(loader, entries);
             }
         };
 
         task.setOnSucceeded(e -> {
             if (token != loadToken.get()) return;
-            List<LogEntry> loadedEntries = task.getValue();
+
+            LoadResult result = task.getValue();
+            if (result == null) {
+                layoutManager.showLoading(false);
+                return;
+            }
+
+            // Сохраняем loader для возможности загрузки следующих страниц
+            pagedLoader = result.loader;
+            List<LogEntry> loadedEntries = result.entries;
+
+            if (loadedEntries == null) {
+                loadedEntries = new ArrayList<>();
+            }
+
             // Reset highlight
             loadedEntries.forEach(entry -> entry.setHighlighted(false));
             masterData.setAll(loadedEntries);
+
+            // Добавляем маркер "Load more", если есть еще данные
+            appendLoadMoreMarker();
+
             autoResizeColumns();
             layoutManager.showLoading(false);
         });

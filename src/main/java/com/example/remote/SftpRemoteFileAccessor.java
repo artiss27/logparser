@@ -152,6 +152,13 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
         }
     }
 
+    /**
+     * Читает новые строки из удаленного файла начиная с указанного offset.
+     * Защищает от чтения слишком больших объемов данных при массовой записи в лог.
+     *
+     * @param offset позиция в файле, с которой начинать чтение
+     * @return список новых записей логов
+     */
     public List<LogEntry> readFromOffset(long offset) {
         List<LogEntry> entries = new ArrayList<>();
         ChannelSftp localSftp = null;
@@ -164,6 +171,16 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
 
             long fileSize = localSftp.lstat(remotePath).getSize();
             if (offset >= fileSize) return entries;
+
+            // Защита от чтения слишком большого объема данных
+            long bytesToRead = fileSize - offset;
+            long maxReadSize = AppConfig.MAX_INCREMENTAL_READ_MB * 1024L * 1024L;
+
+            if (bytesToRead > maxReadSize) {
+                System.out.println("⚠️ Remote file changed by " + (bytesToRead / 1024 / 1024)
+                    + " MB, limiting to last " + AppConfig.MAX_INCREMENTAL_READ_MB + " MB");
+                offset = fileSize - maxReadSize;
+            }
 
             try (InputStream input = localSftp.get(remotePath, null, offset);
                  ByteArrayOutputStream buffer = new ByteArrayOutputStream()) {
@@ -185,6 +202,39 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
             if (localSftp != null && localSftp.isConnected()) localSftp.disconnect();
         }
         return entries;
+    }
+
+    @Override
+    public byte[] readChunk(long offset, int length) {
+        ChannelSftp localSftp = null;
+        try {
+            if (!isAlive()) connect();
+
+            Channel channel = session.openChannel("sftp");
+            channel.connect(AppConfig.SFTP_CHANNEL_TIMEOUT);
+            localSftp = (ChannelSftp) channel;
+
+            try (InputStream input = localSftp.get(remotePath, null, offset);
+                 ByteArrayOutputStream buffer = new ByteArrayOutputStream()) {
+
+                byte[] chunk = new byte[AppConfig.DEFAULT_BUFFER_SIZE];
+                int read;
+                long remaining = length;
+
+                while (remaining > 0 && (read = input.read(chunk, 0, (int) Math.min(chunk.length, remaining))) != -1) {
+                    buffer.write(chunk, 0, read);
+                    remaining -= read;
+                }
+
+                return buffer.toByteArray();
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return new byte[0];
+        } finally {
+            if (localSftp != null && localSftp.isConnected()) localSftp.disconnect();
+        }
     }
 
     private InputStream getWithTimeout(ChannelSftp sftp, String path, long timeoutMillis) throws Exception {

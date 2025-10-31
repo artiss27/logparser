@@ -8,4 +8,12 @@ public interface RemoteFileAccessor {
     long getFileSize() throws Exception;
     byte[] read(long offset, int length);
     byte[] readLastBytes(int maxBytes);
+
+    /**
+     * Читает чанк данных из файла начиная с указанного offset
+     * @param offset позиция начала чтения
+     * @param length количество байт для чтения
+     * @return массив прочитанных байт
+     */
+    byte[] readChunk(long offset, int length);
 }

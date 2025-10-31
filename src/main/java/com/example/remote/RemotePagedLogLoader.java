@@ -16,17 +16,17 @@ public class RemotePagedLogLoader implements PagedLoader {
     private final RemoteFileAccessor accessor;
     private final LogParser parser;
     private final int pageSize;
-    private long filePointer;
-    private boolean initialLoadDone;
+    private long filePointer; // Current position in file (reading backwards)
+    private final long fileSize; // Total file size
 
     public RemotePagedLogLoader(RemoteFileAccessor accessor, LogParser parser, int pageSize) throws IOException {
         this.accessor = accessor;
         this.parser = parser;
         this.pageSize = pageSize;
-        this.initialLoadDone = false;
         try {
             this.accessor.connect();
-            this.filePointer = accessor.getFileSize();
+            this.fileSize = accessor.getFileSize();
+            this.filePointer = fileSize; // Start from the end
         } catch (Exception e) {
             throw new IOException("Failed to initialize RemotePagedLogLoader", e);
         }
@@ -40,45 +40,48 @@ public class RemotePagedLogLoader implements PagedLoader {
     public List<LogEntry> loadNextPage() throws IOException {
         List<LogEntry> entries = new ArrayList<>();
 
-        if (filePointer <= 0 && initialLoadDone) {
+        if (filePointer <= 0) {
             return entries; // No more data to load
         }
 
-        // На первой загрузке читаем последние N КБ файла
-        byte[] data = accessor.readLastBytes(AppConfig.REMOTE_READ_MAX_BYTES);
-
+        // Читаем чанк данных (по умолчанию 1 МБ или меньше, если файл меньше)
+        int bytesToRead = (int) Math.min(AppConfig.REMOTE_READ_MAX_BYTES, filePointer);
+        long startOffset = filePointer - bytesToRead;
+        
+        byte[] data = accessor.readChunk(startOffset, bytesToRead);
         String content = new String(data, StandardCharsets.UTF_8);
+        
+        // Разбиваем на строки
         String[] lines = content.split("\n");
-
+        
+        // Берем последние N строк (pageSize) из прочитанного чанка
         int start = Math.max(0, lines.length - pageSize);
         for (int i = start; i < lines.length; i++) {
-            if (lines[i].trim().isEmpty()) {
+            String line = lines[i].trim();
+            if (line.isEmpty()) {
                 continue; // Skip empty lines
             }
-            entries.add(LogEntryFactory.parseOrInvalid(parser, lines[i]));
+            entries.add(LogEntryFactory.parseOrInvalid(parser, line));
         }
 
-        System.out.println("📦 RemotePagedLogLoader loaded " + entries.size() + " entries");
-
-        initialLoadDone = true;
-        // После первой загрузки помечаем, что больше данных нет (пока не поддерживается backward reading)
-        filePointer = 0;
+        // Обновляем filePointer - сдвигаемся назад на прочитанные данные
+        filePointer = startOffset;
+        
+        System.out.println("📦 RemotePagedLogLoader: loaded " + entries.size() 
+            + " entries, remaining bytes: " + filePointer + "/" + fileSize);
 
         return entries;
     }
 
     @Override
     public boolean hasMore() {
-        // Remote paged loading currently only supports initial load
-        // For true paging, need to implement backward file reading via SFTP
-        return !initialLoadDone && filePointer > 0;
+        return filePointer > 0;
     }
 
     @Override
     public void reset() throws IOException {
         try {
             filePointer = accessor.getFileSize();
-            initialLoadDone = false;
         } catch (Exception e) {
             throw new IOException("Failed to reset remote file pointer", e);
         }

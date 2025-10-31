@@ -89,10 +89,30 @@ public class PagedLogLoader implements PagedLoader {
         // No resources to close for local file
     }
 
+    /**
+     * Загружает новые строки, добавленные в файл с момента previousSize.
+     * Используется для инкрементального обновления при мониторинге изменений файла.
+     *
+     * @param previousSize предыдущий размер файла (offset, с которого начинать чтение)
+     * @return список новых записей логов
+     * @throws IOException при ошибке чтения файла
+     */
     public List<LogEntry> loadNewLines(long previousSize) throws IOException {
         List<LogEntry> newEntries = new ArrayList<>();
 
-        if (previousSize >= file.length()) return newEntries;
+        long currentSize = file.length();
+        if (previousSize >= currentSize) return newEntries;
+
+        // Ограничиваем количество читаемых данных за раз
+        long maxReadSize = AppConfig.MAX_INCREMENTAL_READ_MB * 1024L * 1024L;
+        long bytesToRead = currentSize - previousSize;
+
+        if (bytesToRead > maxReadSize) {
+            // Если изменений слишком много, читаем только последние N МБ
+            System.out.println("⚠️ File changed by " + (bytesToRead / 1024 / 1024) + " MB, limiting to last "
+                + AppConfig.MAX_INCREMENTAL_READ_MB + " MB");
+            previousSize = currentSize - maxReadSize;
+        }
 
         try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
             raf.seek(previousSize);
