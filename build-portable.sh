@@ -3,7 +3,7 @@
 # Переменные
 APP_NAME="LogParser"
 MAIN_JAR="logparser-1.0-SNAPSHOT-shaded.jar"
-MAIN_CLASS="com.example.MainApp"
+MAIN_CLASS="com.logparser.MainApp"
 TARGET_DIR="target"
 OUTPUT_DIR="$HOME/Downloads"
 ICON_PATH="src/main/resources/icons/logparser.icns"

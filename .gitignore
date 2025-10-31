@@ -38,5 +38,31 @@ build/
 
 ### Mac OS ###
 .DS_Store
-/javafx-sdk-21.0.8/
-/javafx-jmods-21.0.8/
+.AppleDouble
+.LSOverride
+
+### JavaFX ###
+/javafx-sdk-*/
+/javafx-jmods-*/
+
+### Application specific ###
+profiles.json.enc
+.logparser.key
+*.log
+*.log.*
+
+### Build artifacts ###
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+### Temporary files ###
+*.tmp
+*.temp
+*.swp
+*.bak
+*~
+
