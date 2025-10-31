@@ -21,6 +21,7 @@ public class LogFileWatcher {
 
     private static final long SCAN_INTERVAL_SECONDS = 5;
     private volatile boolean active = true;
+    private volatile boolean isFirstScan = true;
 
     private ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r);
@@ -43,6 +44,7 @@ public class LogFileWatcher {
 
     public void startWatching(File directory) {
         stopWatching();
+        this.isFirstScan = true;
         this.layoutManager.setFirstScanProfile(true);
 
         // Recreate scheduler if needed
@@ -67,6 +69,11 @@ public class LogFileWatcher {
                 File[] files = directory.listFiles((dir, name) -> !name.startsWith("."));
                 if (files == null) return;
 
+                boolean firstScan = isFirstScan;
+                if (isFirstScan) {
+                    isFirstScan = false;
+                }
+
                 for (File file : files) {
                     if (!file.isFile()) continue;
 
@@ -75,7 +82,9 @@ public class LogFileWatcher {
 
                     if (previousOffset == null) {
                         fileReadOffsets.put(file, currentSize);
-                        Platform.runLater(() -> fileManager.addNewFile(file.getName(), file.length(), true));
+                        // Only mark as updated if NOT first scan (means it's a newly created file)
+                        boolean markAsUpdated = !firstScan;
+                        Platform.runLater(() -> fileManager.addNewFile(file.getName(), file.length(), markAsUpdated));
                         continue;
                     }
 
@@ -107,9 +116,13 @@ public class LogFileWatcher {
     }
 
     public void stopWatching() {
+        if (watchTask != null && !watchTask.isCancelled()) {
+            watchTask.cancel(true);
+        }
         if (scheduler != null && !scheduler.isShutdown()) {
             scheduler.shutdownNow();
         }
+        fileReadOffsets.clear();
     }
 
     public void setActive(boolean active) {

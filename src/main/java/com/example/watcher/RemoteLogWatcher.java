@@ -258,4 +258,11 @@ public class RemoteLogWatcher {
             }
         }).start();
     }
+
+    public void clearCacheForProfile(String profileId) {
+        profileFileListCache.remove(profileId);
+        profileFileCache.remove(profileId);
+        remoteFileSizes.clear();
+        System.out.println("🧹 Cleared cache for profile: " + profileId);
+    }
 }

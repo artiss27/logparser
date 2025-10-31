@@ -16,10 +16,8 @@ import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 
 import java.io.File;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 public class FileManager {
 
@@ -75,7 +73,23 @@ public class FileManager {
         });
 
         Button reloadButton = new Button("Reload Files");
-        reloadButton.setOnAction(e -> loadFileList(profileManager.getSelectedProfile()));
+        reloadButton.setOnAction(e -> {
+            Profile profile = profileManager.getSelectedProfile();
+
+            // Clear logs and detail view before reloading file list
+            layoutManager.getLogManager().clearLogs();
+            layoutManager.getDetailManager().showLogDetails(null, null);
+            fileListView.getSelectionModel().clearSelection();
+
+            // For remote profiles, clear cache and force refresh from server
+            if (profile != null && profile.isRemote()) {
+                layoutManager.getRemoteLogWatcher().clearCacheForProfile(profile.getId());
+                layoutManager.getRemoteLogWatcher().forceRefresh();
+                loadFileList(profile, true); // Force reload without cache
+            } else {
+                loadFileList(profile);
+            }
+        });
 
         Button clearLogsButton = new Button("🗑 Clear Logs");
         clearLogsButton.setOnAction(e -> clearLogs(profileManager.getSelectedProfile()));
@@ -111,6 +125,10 @@ public class FileManager {
     }
 
     public void loadFileList(Profile profile) {
+        loadFileList(profile, false);
+    }
+
+    public void loadFileList(Profile profile, boolean forceReload) {
         layoutManager.showLoading(true); // 🔥 показываем индикатор
         fileNames.clear();
         if (profile == null) {
@@ -123,31 +141,41 @@ public class FileManager {
             if (path.isDirectory() && path.exists()) {
                 File[] files = path.listFiles();
                 if (files != null) {
-                    Arrays.stream(files)
+                    List<String> fileList = Arrays.stream(files)
                             .filter(file -> file.isFile() && !file.getName().startsWith("."))
-                            .forEach(file -> {
+                            .map(file -> {
                                 String size = humanReadableByteCountBin(file.length());
-                                fileNames.add(file.getName() + " (" + size + ")");
-                            });
+                                return file.getName() + " (" + size + ")";
+                            })
+                            .sorted(String.CASE_INSENSITIVE_ORDER)
+                            .collect(Collectors.toList());
+                    fileNames.addAll(fileList);
                 }
             } else if (path.isFile()) {
                 String size = humanReadableByteCountBin(path.length());
                 fileNames.add(path.getName() + " (" + size + ")");
             }
+            layoutManager.showLoading(false);
         } else {
             RemoteLogWatcher watcher = layoutManager.getRemoteLogWatcher();
-            if (watcher != null) {
+            if (watcher != null && !forceReload) {
                 List<String> cachedFiles = watcher.getFileListFromCache(profile);
                 if (!cachedFiles.isEmpty()) {
-                    fileNames.setAll(cachedFiles); // ✅ заменить, а не добавлять!
+                    // Sort cached files alphabetically
+                    List<String> sortedFiles = new ArrayList<>(cachedFiles);
+                    sortedFiles.sort(String.CASE_INSENSITIVE_ORDER);
+                    fileNames.setAll(sortedFiles);
                     System.out.println("⚡ Loaded cached file list for profile: " + profile.getId());
+                    layoutManager.showLoading(false);
                 } else {
-                    layoutManager.showLoading(true); // ✅ показывать лоадер только если кэш пустой
+                    // Кеш пустой, загрузка будет из watcher
+                    layoutManager.showLoading(true);
                 }
+            } else {
+                // Force reload - watcher will populate the list
+                layoutManager.showLoading(true);
             }
         }
-
-        layoutManager.showLoading(false); // 🔥 скрываем после загрузки списка
     }
 
     public VBox getFileListPane() {
@@ -193,6 +221,8 @@ public class FileManager {
         String displayName = fileName + " (" + humanReadableByteCountBin(sizeBytes) + ")";
         if (fileNames.stream().noneMatch(name -> name.startsWith(fileName))) {
             fileNames.add(displayName);
+            // Sort the list alphabetically after adding
+            FXCollections.sort(fileNames, String.CASE_INSENSITIVE_ORDER);
             updatedFiles.put(fileName, markAsUpdated);
             refreshFileListView();
         }
