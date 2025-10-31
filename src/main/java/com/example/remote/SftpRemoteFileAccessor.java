@@ -1,7 +1,9 @@
 package com.example.remote;
 
+import com.example.config.AppConfig;
 import com.example.model.LogEntry;
 import com.example.parser.LogParser;
+import com.example.utils.LogEntryFactory;
 import com.jcraft.jsch.*;
 
 import java.io.ByteArrayOutputStream;
@@ -47,15 +49,15 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
             config.put("StrictHostKeyChecking", "no");
             config.put("PreferredAuthentications", "password");
             session.setConfig(config);
-            session.setServerAliveInterval(15000); // 🔁 ping every 15 sec
-            session.setServerAliveCountMax(3);
-            session.connect(5000);
+            session.setServerAliveInterval(AppConfig.SFTP_SERVER_ALIVE_INTERVAL);
+            session.setServerAliveCountMax(AppConfig.SFTP_SERVER_ALIVE_COUNT_MAX);
+            session.connect(AppConfig.SFTP_CONNECT_TIMEOUT);
         }
 
         if (sftp == null || !sftp.isConnected()) {
             System.out.println("🛰 Opening SFTP channel...");
             Channel channel = session.openChannel("sftp");
-            channel.connect(3000);
+            channel.connect(AppConfig.SFTP_CHANNEL_TIMEOUT);
             sftp = (ChannelSftp) channel;
             System.out.println("✅ SFTP channel connected.");
         }
@@ -95,7 +97,7 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
 
                 input.skip(offset);
 
-                byte[] chunk = new byte[8192];
+                byte[] chunk = new byte[AppConfig.DEFAULT_BUFFER_SIZE];
                 int remaining = length;
                 int read;
 
@@ -130,7 +132,7 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
             try (InputStream input = localSftp.get(remotePath, null, startOffset);
                  ByteArrayOutputStream buffer = new ByteArrayOutputStream()) {
 
-                byte[] chunk = new byte[8192];
+                byte[] chunk = new byte[AppConfig.DEFAULT_BUFFER_SIZE];
                 int read;
                 long remaining = bytesToRead;
 
@@ -157,7 +159,7 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
         try {
             if (!isAlive()) connect();
             Channel channel = session.openChannel("sftp");
-            channel.connect(3000);
+            channel.connect(AppConfig.SFTP_CHANNEL_TIMEOUT);
             localSftp = (ChannelSftp) channel;
 
             long fileSize = localSftp.lstat(remotePath).getSize();
@@ -166,15 +168,14 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
             try (InputStream input = localSftp.get(remotePath, null, offset);
                  ByteArrayOutputStream buffer = new ByteArrayOutputStream()) {
 
-                byte[] chunk = new byte[8192];
+                byte[] chunk = new byte[AppConfig.DEFAULT_BUFFER_SIZE];
                 int read;
                 while ((read = input.read(chunk)) != -1) buffer.write(chunk, 0, read);
 
                 String[] lines = buffer.toString(StandardCharsets.UTF_8).split("\n");
                 for (String line : lines) {
                     String decoded = new String(line.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
-                    LogEntry entry = parser.parseLine(decoded);
-                    entries.add(entry != null ? entry : new LogEntry("", "", "INVALID", "", "", "", false, decoded));
+                    entries.add(LogEntryFactory.parseOrInvalid(parser, decoded));
                 }
             }
 

@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 public class LogFileWatcher {
@@ -21,20 +22,21 @@ public class LogFileWatcher {
     private static final long SCAN_INTERVAL_SECONDS = 5;
     private volatile boolean active = true;
 
-    // 🔧 daemon thread — не блокирует завершение JVM
     private ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r);
+        t.setName("LogFileWatcher-Scheduler");
         t.setDaemon(true);
         return t;
     });
 
+    private ScheduledFuture<?> watchTask;
     private final Map<File, Long> fileReadOffsets = new HashMap<>();
     private final FileManager fileManager;
     private final LogManager logManager;
-    private final MainLayoutManager layoutManager; // 👈 добавляем
+    private final MainLayoutManager layoutManager;
 
     public LogFileWatcher(MainLayoutManager layoutManager, FileManager fileManager, LogManager logManager) {
-        this.layoutManager = layoutManager; // 👈 инициализируем
+        this.layoutManager = layoutManager;
         this.fileManager = fileManager;
         this.logManager = logManager;
     }
@@ -42,12 +44,18 @@ public class LogFileWatcher {
     public void startWatching(File directory) {
         stopWatching();
         this.layoutManager.setFirstScanProfile(true);
-        scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r);
-            t.setDaemon(true);
-            return t;
-        });
-        scheduler.scheduleAtFixedRate(() -> {
+
+        // Recreate scheduler if needed
+        if (scheduler.isShutdown()) {
+            scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r);
+                t.setName("LogFileWatcher-Scheduler");
+                t.setDaemon(true);
+                return t;
+            });
+        }
+
+        watchTask = scheduler.scheduleAtFixedRate(() -> {
             if (!active) return;
 
             if (this.layoutManager.getFirstScanProfile()) {
@@ -56,7 +64,6 @@ public class LogFileWatcher {
             }
             Platform.runLater(() -> layoutManager.showScanIndicator(true));
             try {
-//                Thread.sleep(500);
                 File[] files = directory.listFiles((dir, name) -> !name.startsWith("."));
                 if (files == null) return;
 
@@ -92,8 +99,6 @@ public class LogFileWatcher {
                         });
                     }
                 }
-//            } catch (InterruptedException e) {
-//                throw new RuntimeException(e);
             } finally {
                 this.layoutManager.showLoading(false);
                 Platform.runLater(() -> layoutManager.showScanIndicator(false));

@@ -1,12 +1,18 @@
 package com.example.manager;
 
+import com.example.config.AppConfig;
+import com.example.loader.PagedLoader;
 import com.example.model.LogEntry;
 import com.example.model.Profile;
 import com.example.parser.LogParser;
-import com.example.remote.SftpRemoteFileAccessor;
-import com.example.utils.PagedLogLoader;
 import com.example.remote.RemoteFileAccessor;
 import com.example.remote.RemotePagedLogLoader;
+import com.example.remote.SftpRemoteFileAccessor;
+import com.example.service.ExecutorServiceManager;
+import com.example.utils.DateParser;
+import com.example.utils.LogEntryFactory;
+import com.example.utils.PagedLogLoader;
+import com.example.watcher.RemoteLogWatcher;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.beans.binding.Bindings;
@@ -15,6 +21,7 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.collections.transformation.FilteredList;
 import javafx.collections.transformation.SortedList;
+import javafx.concurrent.Task;
 import javafx.geometry.Insets;
 import javafx.scene.control.*;
 import javafx.scene.layout.HBox;
@@ -22,15 +29,11 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
 import javafx.util.Duration;
-import javafx.concurrent.Task;
-import com.example.remote.SftpRemoteFileAccessor;
-import com.example.watcher.RemoteLogWatcher;
 import javafx.application.Platform;
 
 import java.io.File;
 import java.io.IOException;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -51,10 +54,8 @@ public class LogManager {
     private LogParser activeParser;
     private FilteredList<LogEntry> filteredData;
     private final Button loadMoreButton = new Button("Load more");
-    private Object pagedLoader;
+    private PagedLoader pagedLoader;
     private final Map<String, Boolean> groupColorMap = new HashMap<>();
-    private Object currentLoader;
-    private final ObservableList<LogEntry> logEntries = FXCollections.observableArrayList();
     private final AtomicInteger loadToken = new AtomicInteger(0);
 
     public LogManager(MainLayoutManager layoutManager) {
@@ -65,7 +66,7 @@ public class LogManager {
 
         HBox filters = new HBox(10);
 
-        levelFilter = new ComboBox<>(FXCollections.observableArrayList("All", "ERROR", "WARNING", "INFO", "NOTICE", "DEBUG"));
+        levelFilter = new ComboBox<>(FXCollections.observableArrayList(AppConfig.LOG_LEVELS));
         levelFilter.setValue("All");
         levelFilter.setPrefWidth(120);
 
@@ -201,7 +202,8 @@ public class LogManager {
                 if (empty || message == null) {
                     setText(null);
                 } else {
-                    setText(message.length() > 100 ? message.substring(0, 100) + "..." : message);
+                    setText(message.length() > AppConfig.MESSAGE_PREVIEW_LENGTH ?
+                           message.substring(0, AppConfig.MESSAGE_PREVIEW_LENGTH) + "..." : message);
                 }
             }
         });
@@ -271,7 +273,6 @@ public class LogManager {
                 System.out.println("⚡ Cached logs loaded for: " + fileName);
 
                 Platform.runLater(() -> {
-                    logEntries.setAll(cached);
                     masterData.setAll(cached);
                     autoResizeColumns();
                     layoutManager.showLoading(false);
@@ -316,13 +317,11 @@ public class LogManager {
             layoutManager.showLoading(false);
         });
 
-        new Thread(task).start();
+        ExecutorServiceManager.getInstance().execute(task);
     }
 
     private boolean hasMore() {
-        if (pagedLoader instanceof PagedLogLoader pl) return pl.hasMore();
-        if (pagedLoader instanceof RemotePagedLogLoader rpl) return rpl.hasMore();
-        return false;
+        return pagedLoader != null && pagedLoader.hasMore();
     }
 
     private boolean isLoading = false;
@@ -332,6 +331,10 @@ public class LogManager {
     }
 
     private void loadPageAsync() {
+        if (pagedLoader == null) {
+            return;
+        }
+
         layoutManager.showLoading(true);
         loadMoreButton.setVisible(false);
 
@@ -350,8 +353,7 @@ public class LogManager {
             layoutManager.showLoading(false);
         };
 
-        if (pagedLoader instanceof PagedLogLoader pl) pl.loadNextPageAsync(onSuccess, onError);
-        if (pagedLoader instanceof RemotePagedLogLoader rpl) rpl.loadNextPageAsync(onSuccess, onError);
+        pagedLoader.loadNextPageAsync(onSuccess, onError);
     }
 
     private void updateFilters() {
@@ -379,25 +381,10 @@ public class LogManager {
                     || log.getLevel().toUpperCase().contains(selectedLevel.toUpperCase());
 
             boolean matchesDate = true;
-            try {
-                if (log.getDate() != null && !log.getDate().isBlank()) {
-                    String logDateString = log.getDate().split(" ")[0];
-
-                    LocalDate logDate;
-                    if (logDateString.contains(".")) {
-                        logDate = LocalDate.parse(logDateString, DateTimeFormatter.ofPattern("dd.MM.yyyy"));
-                    } else if (logDateString.contains("-")) {
-                        logDate = LocalDate.parse(logDateString, DateTimeFormatter.ISO_LOCAL_DATE);
-                    } else {
-                        logDate = null;
-                    }
-
-                    if (logDate != null) {
-                        if (dateFrom != null && logDate.isBefore(dateFrom)) matchesDate = false;
-                        if (dateTo != null && logDate.isAfter(dateTo)) matchesDate = false;
-                    }
-                }
-            } catch (Exception ignored) {}
+            if (log.getDate() != null && !log.getDate().isBlank()) {
+                LocalDate logDate = DateParser.parseLogDate(log.getDate());
+                matchesDate = DateParser.isBetween(logDate, dateFrom, dateTo);
+            }
 
             return matchesSearch && matchesLevel && matchesDate;
         });
@@ -426,7 +413,7 @@ public class LogManager {
 
     private void autoResizeColumns() {
         tableView.setColumnResizePolicy(TableView.UNCONSTRAINED_RESIZE_POLICY);
-        int sampleSize = Math.min(20, tableView.getItems().size());
+        int sampleSize = Math.min(AppConfig.TABLE_SAMPLE_SIZE, tableView.getItems().size());
 
         tableView.getColumns().forEach(column -> {
             Text headerText = new Text(column.getText());
@@ -437,7 +424,8 @@ public class LogManager {
                 if (cellData != null) {
                     String textStr = cellData.toString();
                     if (column.getText().equalsIgnoreCase("Message")) {
-                        textStr = textStr.length() > 100 ? textStr.substring(0, 100) + "..." : textStr;
+                        textStr = textStr.length() > AppConfig.MESSAGE_PREVIEW_LENGTH ?
+                                 textStr.substring(0, AppConfig.MESSAGE_PREVIEW_LENGTH) + "..." : textStr;
                     }
                     Text t = new Text(textStr);
                     double width = t.getLayoutBounds().getWidth() + 20;
@@ -453,25 +441,15 @@ public class LogManager {
     public void clearLogs() {
         masterData.clear();
         layoutManager.getDetailManager().showLogDetails(null, null);
-//        if (pagedLoader instanceof RemotePagedLogLoader rpl) {
-//            rpl.close(); // 🔥 явно закрываем сессию
-//        }
     }
 
     private void appendLoadMoreMarker() {
         // Удаляем предыдущие маркеры, если есть
         masterData.removeIf(entry -> "LM".equals(entry.getLevel()) || "-".equals(entry.getLevel()));
 
-        if (pagedLoader instanceof PagedLogLoader pl && pl.hasMore()) {
-            LogEntry marker = new LogEntry("", "", "LM", "", "", "", true, "");
-            LogEntry spacer = new LogEntry("", "", "-", "", "", "", true, "");
-            masterData.add(spacer);
-            masterData.add(marker);
-        } else if (pagedLoader instanceof RemotePagedLogLoader rpl && rpl.hasMore()) {
-            LogEntry marker = new LogEntry("", "", "LM", "", "", "", true, "");
-            LogEntry spacer = new LogEntry("", "", "-", "", "", "", true, "");
-            masterData.add(spacer);
-            masterData.add(marker);
+        if (pagedLoader != null && pagedLoader.hasMore()) {
+            masterData.add(LogEntryFactory.createSpacer());
+            masterData.add(LogEntryFactory.createLoadMoreMarker());
         }
     }
 
@@ -508,7 +486,7 @@ public class LogManager {
     private void highlightEntry(LogEntry entry) {
         entry.setHighlighted(true);
         Timeline timeline = new Timeline(
-                new KeyFrame(Duration.seconds(15), e -> entry.setHighlighted(false))
+                new KeyFrame(Duration.seconds(AppConfig.HIGHLIGHT_DURATION_SECONDS), e -> entry.setHighlighted(false))
         );
         timeline.play();
     }
@@ -526,17 +504,6 @@ public class LogManager {
                     : new File(profile.getPath(), fileName).getAbsolutePath();
 
             loadLogsFromFile(fullPath, profile.isRemote());
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void closeLoaderIfNeeded() {
-        try {
-            if (pagedLoader instanceof RemotePagedLogLoader rpl) {
-                rpl.close();
-                System.out.println("🔌 RemotePagedLogLoader closed.");
-            }
         } catch (Exception e) {
             e.printStackTrace();
         }

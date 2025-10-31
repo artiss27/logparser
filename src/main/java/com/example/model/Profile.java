@@ -94,6 +94,59 @@ public class Profile {
     }
 
     public String getId() {
+        if (host == null || username == null) {
+            return name + "_" + System.identityHashCode(this);
+        }
         return host + ":" + port + "/" + username;
+    }
+
+    /**
+     * Validate the profile configuration
+     * @return true if profile is valid
+     */
+    public boolean isValid() {
+        if (name == null || name.trim().isEmpty()) {
+            return false;
+        }
+        if (path == null || path.trim().isEmpty()) {
+            return false;
+        }
+        if (remote) {
+            if (host == null || host.trim().isEmpty()) {
+                return false;
+            }
+            if (port < 1 || port > 65535) {
+                return false;
+            }
+            if (username == null || username.trim().isEmpty()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Get validation error message if invalid
+     * @return Error message or null if valid
+     */
+    public String getValidationError() {
+        if (name == null || name.trim().isEmpty()) {
+            return "Profile name is required";
+        }
+        if (path == null || path.trim().isEmpty()) {
+            return "Path is required";
+        }
+        if (remote) {
+            if (host == null || host.trim().isEmpty()) {
+                return "Host is required for remote profiles";
+            }
+            if (port < 1 || port > 65535) {
+                return "Port must be between 1 and 65535";
+            }
+            if (username == null || username.trim().isEmpty()) {
+                return "Username is required for remote profiles";
+            }
+        }
+        return null;
     }
 }

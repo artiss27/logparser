@@ -1,6 +1,7 @@
 package com.example;
 
 import com.example.manager.MainLayoutManager;
+import com.example.service.ExecutorServiceManager;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.scene.Scene;
@@ -43,6 +44,7 @@ public class MainApp extends Application {
         if (layoutManager != null) {
             layoutManager.shutdown();
         }
+        ExecutorServiceManager.getInstance().shutdown();
     }
 
     public static void main(String[] args) {

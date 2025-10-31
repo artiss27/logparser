@@ -1,17 +1,17 @@
 package com.example.utils;
 
+import com.example.config.AppConfig;
+import com.example.loader.PagedLoader;
 import com.example.model.LogEntry;
 import com.example.parser.LogParser;
-import javafx.concurrent.Task;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.function.Consumer;
 
-public class PagedLogLoader {
+public class PagedLogLoader implements PagedLoader {
 
     private final File file;
     private final LogParser parser;
@@ -26,9 +26,10 @@ public class PagedLogLoader {
     }
 
     public PagedLogLoader(File file, LogParser parser) {
-        this(file, parser, 500);
+        this(file, parser, AppConfig.DEFAULT_PAGE_SIZE);
     }
 
+    @Override
     public List<LogEntry> loadNextPage() throws IOException {
         List<LogEntry> entries = new ArrayList<>();
         StringBuilder sb = new StringBuilder();
@@ -49,8 +50,7 @@ public class PagedLogLoader {
                         String line = sb.reverse().toString();
                         sb.setLength(0);
                         String decoded = new String(line.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
-                        LogEntry entry = parser.parseLine(decoded);
-                        entries.add(entry != null ? entry : new LogEntry("", "", "INVALID", "", "", "", false, decoded));
+                        entries.add(LogEntryFactory.parseOrInvalid(parser, decoded));
                         linesRead++;
                     }
                 } else {
@@ -62,8 +62,7 @@ public class PagedLogLoader {
             if (sb.length() > 0 && linesRead < pageSize) {
                 String line = sb.reverse().toString();
                 String decoded = new String(line.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
-                LogEntry entry = parser.parseLine(decoded);
-                entries.add(entry != null ? entry : new LogEntry("", "", "INVALID", "", "", "", false, decoded));
+                entries.add(LogEntryFactory.parseOrInvalid(parser, decoded));
                 linesRead++;
                 currentPosition = 0; // дошли до начала файла
             }
@@ -75,30 +74,19 @@ public class PagedLogLoader {
         return entries;
     }
 
-    public Task<List<LogEntry>> loadNextPageAsync(Consumer<List<LogEntry>> onSuccess, Consumer<Throwable> onError) {
-        Task<List<LogEntry>> task = new Task<>() {
-            @Override
-            protected List<LogEntry> call() throws Exception {
-                return loadNextPage();
-            }
-        };
-
-        task.setOnSucceeded(e -> onSuccess.accept(task.getValue()));
-        task.setOnFailed(e -> onError.accept(task.getException()));
-
-        Thread thread = new Thread(task);
-        thread.setDaemon(true);
-        thread.start();
-
-        return task;
-    }
-
+    @Override
     public boolean hasMore() {
         return filePointer > 0;
     }
 
+    @Override
     public void reset() {
         filePointer = file.length();
+    }
+
+    @Override
+    public void close() throws IOException {
+        // No resources to close for local file
     }
 
     public List<LogEntry> loadNewLines(long previousSize) throws IOException {
@@ -112,8 +100,7 @@ public class PagedLogLoader {
             String line;
             while ((line = raf.readLine()) != null) {
                 String decoded = new String(line.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
-                LogEntry entry = parser.parseLine(decoded);
-                newEntries.add(entry != null ? entry : new LogEntry("", "", "INVALID", "", "", "", false, decoded));
+                newEntries.add(LogEntryFactory.parseOrInvalid(parser, decoded));
             }
         }
 
