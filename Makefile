@@ -59,10 +59,11 @@ package: jlink-runtime
 		--app-version $(VERSION) \
 		--runtime-image runtime-image \
 		--java-options "--enable-native-access=ALL-UNNAMED" \
-		--java-options "-Duser.home=$(shell echo $$HOME)" \
 		--vendor "LogParser" \
 		--copyright "2025 LogParser" \
 		--mac-package-name "LogParser" \
+		--mac-package-identifier "com.logparser.app" \
+		--mac-entitlements packaging/macos/entitlements.plist \
 		--temp /tmp/jpackage-logparser
 
 	@echo ""
@@ -92,10 +93,11 @@ package-optimized: clean-all jlink-runtime
 		--app-version $(VERSION) \
 		--runtime-image runtime-image \
 		--java-options "--enable-native-access=ALL-UNNAMED" \
-		--java-options "-Duser.home=$(shell echo $$HOME)" \
 		--vendor "LogParser" \
 		--copyright "2025 LogParser" \
 		--mac-package-name "LogParser" \
+		--mac-package-identifier "com.logparser.app" \
+		--mac-entitlements packaging/macos/entitlements.plist \
 		--temp /tmp/jpackage-logparser
 
 	@echo ""

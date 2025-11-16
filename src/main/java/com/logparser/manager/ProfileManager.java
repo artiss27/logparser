@@ -3,6 +3,7 @@ package com.logparser.manager;
 import com.logparser.model.Profile;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
@@ -40,6 +41,19 @@ public class ProfileManager {
         if (envHome != null && !envHome.isBlank()) {
             System.setProperty("user.home", envHome);
         }
+
+        // Diagnostic output for permission troubleshooting
+        System.out.println("🔍 ProfileManager Diagnostics:");
+        System.out.println("   HOME env: " + System.getenv("HOME"));
+        System.out.println("   user.home: " + System.getProperty("user.home"));
+        System.out.println("   Profile file path: " + getProfileFilePath());
+        System.out.println("   OS: " + System.getProperty("os.name"));
+
+        // Check if directories are writable
+        File profileFile = new File(getProfileFilePath().replace(".json", ".json.enc"));
+        File profileDir = profileFile.getParentFile();
+        System.out.println("   Profile dir exists: " + profileDir.exists());
+        System.out.println("   Profile dir writable: " + (profileDir.exists() && profileDir.canWrite()));
     }
 
     public ProfileManager() {
@@ -147,11 +161,60 @@ public class ProfileManager {
             byte[] json = mapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(profiles);
             byte[] encrypted = CryptoUtils.encrypt(json, key);
             File file = new File(PROFILE_FILE.replace(".json", ".json.enc"));
-            file.getParentFile().mkdirs();
+
+            // Ensure parent directory exists and is writable
+            File parentDir = file.getParentFile();
+            if (!parentDir.exists()) {
+                boolean created = parentDir.mkdirs();
+                if (!created) {
+                    showPermissionError("Failed to create configuration directory: " + parentDir.getAbsolutePath());
+                    return;
+                }
+            }
+
+            // Check if we can write to the directory
+            if (!parentDir.canWrite()) {
+                showPermissionError("No write permission for directory: " + parentDir.getAbsolutePath());
+                return;
+            }
+
             Files.write(file.toPath(), encrypted);
+            System.out.println("✅ Profiles saved successfully to: " + file.getAbsolutePath());
+        } catch (IOException e) {
+            String message = "Failed to save profiles. " + e.getMessage();
+            if (e.getMessage() != null && e.getMessage().contains("Permission denied")) {
+                showPermissionError("Permission denied while saving profiles.\n\n" +
+                        "On macOS, please grant Full Disk Access:\n" +
+                        "System Settings → Privacy & Security → Full Disk Access\n" +
+                        "Add LogParser to the list and restart the app.");
+            } else {
+                showError(message);
+            }
+            e.printStackTrace();
         } catch (Exception e) {
+            showError("Failed to save profiles: " + e.getMessage());
             e.printStackTrace();
         }
+    }
+
+    private void showPermissionError(String message) {
+        Platform.runLater(() -> {
+            Alert alert = new Alert(Alert.AlertType.ERROR);
+            alert.setTitle("Permission Error");
+            alert.setHeaderText("Cannot Save Profiles");
+            alert.setContentText(message);
+            alert.showAndWait();
+        });
+    }
+
+    private void showError(String message) {
+        Platform.runLater(() -> {
+            Alert alert = new Alert(Alert.AlertType.ERROR);
+            alert.setTitle("Error");
+            alert.setHeaderText("An Error Occurred");
+            alert.setContentText(message);
+            alert.showAndWait();
+        });
     }
 
     private void openAddProfileDialog() {

@@ -17,17 +17,43 @@ public class CryptoUtils {
     public static SecretKey getOrCreateKey() throws Exception {
         File keyFile = new File(KEY_FILE);
         if (keyFile.exists()) {
-            byte[] keyBytes = Files.readAllBytes(keyFile.toPath());
-            return new SecretKeySpec(keyBytes, "AES");
+            try {
+                byte[] keyBytes = Files.readAllBytes(keyFile.toPath());
+                return new SecretKeySpec(keyBytes, "AES");
+            } catch (IOException e) {
+                System.err.println("❌ Cannot read key file: " + KEY_FILE);
+                throw new IOException("Failed to read encryption key. Check file permissions: " + KEY_FILE, e);
+            }
         } else {
-            KeyGenerator keyGen = KeyGenerator.getInstance("AES");
-            keyGen.init(256);
-            SecretKey key = keyGen.generateKey();
-            keyFile.getParentFile().mkdirs();
-            Files.write(keyFile.toPath(), key.getEncoded());
-            keyFile.setReadable(false, false);
-            keyFile.setReadable(true, true);
-            return key;
+            try {
+                KeyGenerator keyGen = KeyGenerator.getInstance("AES");
+                keyGen.init(256);
+                SecretKey key = keyGen.generateKey();
+
+                // Ensure parent directory exists
+                File parentDir = keyFile.getParentFile();
+                if (!parentDir.exists()) {
+                    boolean created = parentDir.mkdirs();
+                    if (!created) {
+                        throw new IOException("Cannot create directory: " + parentDir.getAbsolutePath());
+                    }
+                }
+
+                // Check write permission
+                if (!parentDir.canWrite()) {
+                    throw new IOException("No write permission for: " + parentDir.getAbsolutePath());
+                }
+
+                Files.write(keyFile.toPath(), key.getEncoded());
+                keyFile.setReadable(false, false);
+                keyFile.setReadable(true, true);
+
+                System.out.println("✅ Encryption key created: " + KEY_FILE);
+                return key;
+            } catch (IOException e) {
+                System.err.println("❌ Cannot create key file: " + KEY_FILE);
+                throw new IOException("Failed to create encryption key. Check directory permissions.", e);
+            }
         }
     }
 
