@@ -35,6 +35,6 @@ public final class AppConfig {
     public static final String CRYPTO_KEY_FILE_NAME = ".logparser.key";
 
     // Log Levels
-    public static final String[] LOG_LEVELS = {"All", "ERROR", "WARNING", "INFO", "NOTICE", "DEBUG"};
+    public static final String[] LOG_LEVELS = {"All", "CRITICAL", "ALERT", "ERROR", "WARNING", "INFO", "NOTICE", "DEBUG"};
 }
 

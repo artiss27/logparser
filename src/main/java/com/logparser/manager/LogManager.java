@@ -178,6 +178,8 @@ public class LogManager {
 
                 if (logEntry == null || !logEntry.isValid()) {
                     setStyle("-fx-text-fill: gray; -fx-font-style: italic;");
+                } else if ("CRITICAL".equalsIgnoreCase(level)) {
+                    setStyle("-fx-text-fill: red; -fx-font-weight: bold;");
                 } else if ("ERROR".equalsIgnoreCase(level) || "ALERT".equalsIgnoreCase(level)) {
                     setStyle("-fx-text-fill: red;");
                 } else if ("WARNING".equalsIgnoreCase(level)) {
