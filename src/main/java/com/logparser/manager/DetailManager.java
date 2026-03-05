@@ -11,7 +11,7 @@ import org.fxmisc.richtext.LineNumberFactory;
 import java.util.Collections;
 
 /**
- * Управляет правой нижней панелью: отображение деталей выбранного лога с подсветкой JSON и поиска.
+ * Manages the detail panel: displays selected log entry details with JSON and search highlighting.
  */
 public class DetailManager {
 
@@ -44,7 +44,6 @@ public class DetailManager {
         }
 
         if (!log.isValid()) {
-            // если лог невалидный — показываем оригинальную строку
             codeArea.clear();
             codeArea.replaceText("Unparsed log entry:\n\n" + log.getRawLine());
             return;
@@ -85,10 +84,9 @@ public class DetailManager {
         if (firstIndex == -1) {
             return;
         }
-        // Сброс стилей перед новой подсветкой
+
         codeArea.setStyle(0, text.length(), Collections.emptyList());
 
-        // Подсвечиваем все вхождения
         int index = 0;
         while ((index = text.indexOf(lowerSearch, index)) >= 0) {
             int end = index + lowerSearch.length();
@@ -96,7 +94,6 @@ public class DetailManager {
             index = end;
         }
 
-        // Прокрутка к первому совпадению
         codeArea.moveTo(firstIndex);
         codeArea.requestFollowCaret();
     }

@@ -1,5 +1,8 @@
 package com.logparser.utils;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
@@ -11,9 +14,10 @@ import java.security.SecureRandom;
 import java.util.Arrays;
 
 public class CryptoUtils {
+
+    private static final Logger log = LoggerFactory.getLogger(CryptoUtils.class);
     private static final String KEY_FILE = System.getProperty("user.home") + "/.config/LogParser/.key";
 
-    // Получаем или создаём ключ (256 bit)
     public static SecretKey getOrCreateKey() throws Exception {
         File keyFile = new File(KEY_FILE);
         if (keyFile.exists()) {
@@ -21,7 +25,6 @@ public class CryptoUtils {
                 byte[] keyBytes = Files.readAllBytes(keyFile.toPath());
                 return new SecretKeySpec(keyBytes, "AES");
             } catch (IOException e) {
-                System.err.println("❌ Cannot read key file: " + KEY_FILE);
                 throw new IOException("Failed to read encryption key. Check file permissions: " + KEY_FILE, e);
             }
         } else {
@@ -30,7 +33,6 @@ public class CryptoUtils {
                 keyGen.init(256);
                 SecretKey key = keyGen.generateKey();
 
-                // Ensure parent directory exists
                 File parentDir = keyFile.getParentFile();
                 if (!parentDir.exists()) {
                     boolean created = parentDir.mkdirs();
@@ -39,7 +41,6 @@ public class CryptoUtils {
                     }
                 }
 
-                // Check write permission
                 if (!parentDir.canWrite()) {
                     throw new IOException("No write permission for: " + parentDir.getAbsolutePath());
                 }
@@ -48,16 +49,15 @@ public class CryptoUtils {
                 keyFile.setReadable(false, false);
                 keyFile.setReadable(true, true);
 
-                System.out.println("✅ Encryption key created: " + KEY_FILE);
+                log.info("Encryption key created: {}", KEY_FILE);
                 return key;
             } catch (IOException e) {
-                System.err.println("❌ Cannot create key file: " + KEY_FILE);
+                log.error("Cannot create key file: {}", KEY_FILE, e);
                 throw new IOException("Failed to create encryption key. Check directory permissions.", e);
             }
         }
     }
 
-    // Шифрование данных
     public static byte[] encrypt(byte[] data, SecretKey key) throws Exception {
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         byte[] iv = new byte[12];
@@ -72,7 +72,6 @@ public class CryptoUtils {
         return out.toByteArray();
     }
 
-    // Дешифрование данных
     public static byte[] decrypt(byte[] encrypted, SecretKey key) throws Exception {
         byte[] iv = Arrays.copyOfRange(encrypted, 0, 12);
         byte[] cipherText = Arrays.copyOfRange(encrypted, 12, encrypted.length);

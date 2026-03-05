@@ -46,10 +46,12 @@ build/
 /javafx-jmods-*/
 
 ### Application specific ###
+profiles.json
 profiles.json.enc
 .logparser.key
 *.log
 *.log.*
+runtime-image/
 
 ### Build artifacts ###
 *.jar

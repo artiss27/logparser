@@ -44,17 +44,14 @@ public class RemotePagedLogLoader implements PagedLoader {
             return entries; // No more data to load
         }
 
-        // Читаем чанк данных (по умолчанию 1 МБ или меньше, если файл меньше)
         int bytesToRead = (int) Math.min(AppConfig.REMOTE_READ_MAX_BYTES, filePointer);
         long startOffset = filePointer - bytesToRead;
-        
+
         byte[] data = accessor.readChunk(startOffset, bytesToRead);
         String content = new String(data, StandardCharsets.UTF_8);
-        
-        // Разбиваем на строки
+
         String[] lines = content.split("\n");
-        
-        // Берем последние N строк (pageSize) из прочитанного чанка
+
         int start = Math.max(0, lines.length - pageSize);
         for (int i = start; i < lines.length; i++) {
             String line = lines[i].trim();
@@ -64,11 +61,7 @@ public class RemotePagedLogLoader implements PagedLoader {
             entries.add(LogEntryFactory.parseOrInvalid(parser, line));
         }
 
-        // Обновляем filePointer - сдвигаемся назад на прочитанные данные
         filePointer = startOffset;
-        
-        System.out.println("📦 RemotePagedLogLoader: loaded " + entries.size() 
-            + " entries, remaining bytes: " + filePointer + "/" + fileSize);
 
         return entries;
     }
@@ -90,6 +83,5 @@ public class RemotePagedLogLoader implements PagedLoader {
     @Override
     public void close() throws IOException {
         accessor.disconnect();
-        System.out.println("🔌 RemotePagedLogLoader closed.");
     }
 }

@@ -12,9 +12,7 @@ public final class DateParser {
     private static final DateTimeFormatter DOT_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy");
     private static final DateTimeFormatter ISO_FORMAT = DateTimeFormatter.ISO_LOCAL_DATE;
 
-    private DateParser() {
-        // Prevent instantiation
-    }
+    private DateParser() {}
 
     /**
      * Parse a date string from a log entry
@@ -27,21 +25,18 @@ public final class DateParser {
         }
 
         try {
-            // Extract just the date part (before space)
             String datePart = dateString.split(" ")[0];
 
-            // Try dot format first (dd.MM.yyyy)
             if (datePart.contains(".")) {
                 return LocalDate.parse(datePart, DOT_FORMAT);
             }
 
-            // Try ISO format (yyyy-MM-dd)
             if (datePart.contains("-")) {
                 return LocalDate.parse(datePart, ISO_FORMAT);
             }
 
         } catch (DateTimeParseException | ArrayIndexOutOfBoundsException e) {
-            // Return null if parsing fails
+            // Unparseable date
         }
 
         return null;

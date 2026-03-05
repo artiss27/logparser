@@ -6,6 +6,8 @@ import com.logparser.manager.MainLayoutManager;
 import com.logparser.model.LogEntry;
 import com.logparser.utils.PagedLogLoader;
 import javafx.application.Platform;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
@@ -18,6 +20,8 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 public class LogFileWatcher {
+
+    private static final Logger log = LoggerFactory.getLogger(LogFileWatcher.class);
 
     private static final long SCAN_INTERVAL_SECONDS = 5;
     private volatile boolean active = true;
@@ -47,7 +51,6 @@ public class LogFileWatcher {
         this.isFirstScan = true;
         this.layoutManager.setFirstScanProfile(true);
 
-        // Recreate scheduler if needed
         if (scheduler.isShutdown()) {
             scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r);
@@ -82,7 +85,6 @@ public class LogFileWatcher {
 
                     if (previousOffset == null) {
                         fileReadOffsets.put(file, currentSize);
-                        // Only mark as updated if NOT first scan (means it's a newly created file)
                         boolean markAsUpdated = !firstScan;
                         Platform.runLater(() -> fileManager.addNewFile(file.getName(), file.length(), markAsUpdated));
                         continue;
@@ -100,7 +102,7 @@ public class LogFileWatcher {
                                     List<LogEntry> newEntries = loader.loadNewLines(previousOffset);
                                     logManager.prependLogEntries(newEntries);
                                 } catch (IOException e) {
-                                    e.printStackTrace();
+                                    log.error("Failed to load new lines from: {}", file.getName(), e);
                                 }
                             } else {
                                 fileManager.markFileAsUpdated(file.getName());

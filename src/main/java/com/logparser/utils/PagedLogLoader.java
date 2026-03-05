@@ -58,16 +58,14 @@ public class PagedLogLoader implements PagedLoader {
                 }
             }
 
-            // Обрабатываем первую строку, если она не заканчивалась на \n
             if (sb.length() > 0 && linesRead < pageSize) {
                 String line = sb.reverse().toString();
                 String decoded = new String(line.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
                 entries.add(LogEntryFactory.parseOrInvalid(parser, decoded));
-                linesRead++;
-                currentPosition = 0; // дошли до начала файла
+                currentPosition = 0;
             }
 
-            filePointer = currentPosition; // ✅ сохраняем новую позицию
+            filePointer = currentPosition;
         }
 
         Collections.reverse(entries); // чтобы новые сверху
@@ -90,12 +88,12 @@ public class PagedLogLoader implements PagedLoader {
     }
 
     /**
-     * Загружает новые строки, добавленные в файл с момента previousSize.
-     * Используется для инкрементального обновления при мониторинге изменений файла.
+     * Loads new lines added to the file since previousSize.
+     * Used for incremental updates when monitoring file changes.
      *
-     * @param previousSize предыдущий размер файла (offset, с которого начинать чтение)
-     * @return список новых записей логов
-     * @throws IOException при ошибке чтения файла
+     * @param previousSize previous file size (offset to start reading from)
+     * @return list of new log entries
+     * @throws IOException on file read error
      */
     public List<LogEntry> loadNewLines(long previousSize) throws IOException {
         List<LogEntry> newEntries = new ArrayList<>();
@@ -103,14 +101,10 @@ public class PagedLogLoader implements PagedLoader {
         long currentSize = file.length();
         if (previousSize >= currentSize) return newEntries;
 
-        // Ограничиваем количество читаемых данных за раз
         long maxReadSize = AppConfig.MAX_INCREMENTAL_READ_MB * 1024L * 1024L;
         long bytesToRead = currentSize - previousSize;
 
         if (bytesToRead > maxReadSize) {
-            // Если изменений слишком много, читаем только последние N МБ
-            System.out.println("⚠️ File changed by " + (bytesToRead / 1024 / 1024) + " MB, limiting to last "
-                + AppConfig.MAX_INCREMENTAL_READ_MB + " MB");
             previousSize = currentSize - maxReadSize;
         }
 

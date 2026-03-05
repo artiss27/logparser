@@ -7,6 +7,8 @@ import com.logparser.model.LogEntry;
 import com.logparser.model.Profile;
 import com.logparser.remote.SftpRemoteFileAccessor;
 import com.jcraft.jsch.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javafx.application.Platform;
 
@@ -15,12 +17,13 @@ import java.util.concurrent.*;
 
 public class RemoteLogWatcher {
 
+    private static final Logger log = LoggerFactory.getLogger(RemoteLogWatcher.class);
     private static final long SCAN_INTERVAL_SECONDS = 10;
-    private Timer disconnectTimer;
-    private static final long DISCONNECT_DELAY_MS = 60000; // 1 минута
-    private final Map<String, List<LogEntry>> fileCache = new ConcurrentHashMap<>();
+    private static final long DISCONNECT_DELAY_MS = 60000;
+
     private final Map<String, Map<String, List<LogEntry>>> profileFileCache = new ConcurrentHashMap<>();
     private final Map<String, List<String>> profileFileListCache = new ConcurrentHashMap<>();
+    private final Map<String, Long> remoteFileSizes = new HashMap<>();
 
     private ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r);
@@ -28,13 +31,12 @@ public class RemoteLogWatcher {
         return t;
     });
 
-    private final Map<String, Long> remoteFileSizes = new HashMap<>();
     private final FileManager fileManager;
     private final LogManager logManager;
-    private Profile activeProfile;
-    private Session session;
-    private SftpRemoteFileAccessor sftpAccessor;
     private final MainLayoutManager layoutManager;
+
+    private Profile activeProfile;
+    private SftpRemoteFileAccessor sftpAccessor;
     private volatile boolean active = true;
 
     public RemoteLogWatcher(MainLayoutManager layoutManager, FileManager fileManager, LogManager logManager) {
@@ -45,6 +47,7 @@ public class RemoteLogWatcher {
 
     public void startWatching(Profile profile) {
         stopWatching();
+        log.info("Starting remote watcher for profile: {}", profile.getName());
         this.layoutManager.setFirstScanProfile(true);
         this.activeProfile = profile;
         this.remoteFileSizes.clear();
@@ -67,7 +70,6 @@ public class RemoteLogWatcher {
         if (sftpAccessor != null) {
             sftpAccessor.disconnect();
             sftpAccessor = null;
-            System.out.println("\uD83D\uDD0C SFTP accessor disconnected by RemoteLogWatcher");
         }
     }
 
@@ -93,7 +95,7 @@ public class RemoteLogWatcher {
             }
 
             if (!sftpAccessor.isAlive()) {
-                System.out.println("⚠️ SFTP not alive, reconnecting...");
+                log.debug("SFTP connection lost, reconnecting...");
                 sftpAccessor.disconnect();
                 sftpAccessor.connect();
             }
@@ -137,7 +139,7 @@ public class RemoteLogWatcher {
 
                                 Platform.runLater(() -> logManager.prependLogEntries(newEntries));
                             } catch (Exception ex) {
-                                ex.printStackTrace();
+                                log.error("Failed to read new entries from: {}", fileName, ex);
                             } finally {
                                 Platform.runLater(() -> layoutManager.showLoading(false));
                             }
@@ -151,7 +153,6 @@ public class RemoteLogWatcher {
                 }
             }
 
-            // 🧹 Удаление файлов, которые пропали с сервера
             List<String> cached = profileFileListCache.getOrDefault(activeProfile.getId(), new ArrayList<>());
             Iterator<String> iterator = cached.iterator();
             while (iterator.hasNext()) {
@@ -166,7 +167,7 @@ public class RemoteLogWatcher {
             }
 
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Failed to check remote files", e);
             Platform.runLater(() -> layoutManager.showError("Connection Error", "Failed to check remote files:\n" + e.getMessage()));
         } finally {
             Platform.runLater(() -> {
@@ -182,12 +183,8 @@ public class RemoteLogWatcher {
         this.active = active;
 
         if (!active) {
-            disconnectExecutor.schedule(() -> {
-                System.out.println("\u23F3 Window inactive, disconnecting SFTP...");
-                stopWatching();
-            }, DISCONNECT_DELAY_MS, TimeUnit.MILLISECONDS);
+            disconnectExecutor.schedule(this::stopWatching, DISCONNECT_DELAY_MS, TimeUnit.MILLISECONDS);
         } else {
-            // активировали — пробуем переподключить
             if (activeProfile != null && (sftpAccessor == null || !sftpAccessor.isAlive())) {
                 try {
                     if (sftpAccessor == null) {
@@ -201,9 +198,9 @@ public class RemoteLogWatcher {
                         );
                     }
                     sftpAccessor.connect();
-                    System.out.println("🔁 Reconnected SFTP after focus gain");
+                    log.debug("Reconnected SFTP after window focus");
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    log.warn("Failed to reconnect SFTP", e);
                 }
             }
         }
@@ -254,7 +251,7 @@ public class RemoteLogWatcher {
             try {
                 checkRemoteFiles();
             } catch (Exception e) {
-                e.printStackTrace();
+                log.error("Force refresh failed", e);
             }
         }).start();
     }
@@ -263,6 +260,5 @@ public class RemoteLogWatcher {
         profileFileListCache.remove(profileId);
         profileFileCache.remove(profileId);
         remoteFileSizes.clear();
-        System.out.println("🧹 Cleared cache for profile: " + profileId);
     }
 }

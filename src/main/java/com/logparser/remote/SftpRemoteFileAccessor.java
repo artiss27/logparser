@@ -5,6 +5,8 @@ import com.logparser.model.LogEntry;
 import com.logparser.parser.LogParser;
 import com.logparser.utils.LogEntryFactory;
 import com.jcraft.jsch.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -16,6 +18,8 @@ import java.util.Properties;
 import java.util.concurrent.*;
 
 public class SftpRemoteFileAccessor implements RemoteFileAccessor {
+
+    private static final Logger log = LoggerFactory.getLogger(SftpRemoteFileAccessor.class);
 
     private final String host;
     private final int port;
@@ -41,7 +45,7 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
         if (isAlive()) return;
 
         if (session == null || !session.isConnected()) {
-            System.out.println("🔌 SFTP session.connect()");
+            log.debug("Connecting to SFTP: {}@{}:{}", username, host, port);
             JSch jsch = new JSch();
             session = jsch.getSession(username, host, port);
             session.setPassword(password);
@@ -55,22 +59,19 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
         }
 
         if (sftp == null || !sftp.isConnected()) {
-            System.out.println("🛰 Opening SFTP channel...");
             Channel channel = session.openChannel("sftp");
             channel.connect(AppConfig.SFTP_CHANNEL_TIMEOUT);
             sftp = (ChannelSftp) channel;
-            System.out.println("✅ SFTP channel connected.");
+            log.debug("SFTP channel connected");
         }
     }
 
     @Override
     public void disconnect() {
         if (sftp != null && sftp.isConnected()) {
-            System.out.println("🛑 Disconnecting SFTP channel...");
             sftp.disconnect();
         }
         if (session != null && session.isConnected()) {
-            System.out.println("🛑 Disconnecting SFTP session...");
             session.disconnect();
         }
         sftp = null;
@@ -109,8 +110,8 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
                 return buffer.toByteArray();
             }
         } catch (Exception e) {
-            e.printStackTrace();
-            return new byte[0]; // Возврат пустого массива в случае ошибки
+            log.error("Failed to read from remote file: {}", remotePath, e);
+            return new byte[0];
         }
     }
 
@@ -145,7 +146,7 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
             }
 
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Failed to read last {} bytes from: {}", maxBytes, remotePath, e);
             return new byte[0];
         } finally {
             if (localSftp != null && localSftp.isConnected()) localSftp.disconnect();
@@ -153,11 +154,11 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
     }
 
     /**
-     * Читает новые строки из удаленного файла начиная с указанного offset.
-     * Защищает от чтения слишком больших объемов данных при массовой записи в лог.
+     * Reads new lines from a remote file starting from the specified offset.
+     * Limits reading to prevent excessive data transfer.
      *
-     * @param offset позиция в файле, с которой начинать чтение
-     * @return список новых записей логов
+     * @param offset position in the file to start reading from
+     * @return list of new log entries
      */
     public List<LogEntry> readFromOffset(long offset) {
         List<LogEntry> entries = new ArrayList<>();
@@ -172,13 +173,10 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
             long fileSize = localSftp.lstat(remotePath).getSize();
             if (offset >= fileSize) return entries;
 
-            // Защита от чтения слишком большого объема данных
             long bytesToRead = fileSize - offset;
             long maxReadSize = AppConfig.MAX_INCREMENTAL_READ_MB * 1024L * 1024L;
 
             if (bytesToRead > maxReadSize) {
-                System.out.println("⚠️ Remote file changed by " + (bytesToRead / 1024 / 1024)
-                    + " MB, limiting to last " + AppConfig.MAX_INCREMENTAL_READ_MB + " MB");
                 offset = fileSize - maxReadSize;
             }
 
@@ -197,7 +195,7 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
             }
 
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Failed to read from offset {} in: {}", offset, remotePath, e);
         } finally {
             if (localSftp != null && localSftp.isConnected()) localSftp.disconnect();
         }
@@ -230,7 +228,7 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
             }
 
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Failed to read chunk at offset {} from: {}", offset, remotePath, e);
             return new byte[0];
         } finally {
             if (localSftp != null && localSftp.isConnected()) localSftp.disconnect();
@@ -245,7 +243,7 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
             return future.get(timeoutMillis, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             future.cancel(true);
-            throw new IOException("⏰ Timeout while opening remote file: " + path);
+            throw new IOException("Timeout while opening remote file: " + path);
         } finally {
             executor.shutdownNow();
         }
@@ -253,7 +251,6 @@ public class SftpRemoteFileAccessor implements RemoteFileAccessor {
 
     public void setRemotePath(String remotePath) {
         this.remotePath = remotePath;
-        System.out.println("📄 Remote path set to: " + remotePath);
     }
 
     public Session getSession() { return session; }

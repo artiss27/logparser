@@ -34,19 +34,17 @@ public class MainLayoutManager {
     public MainLayoutManager() {
         mainLayout = new SplitPane();
 
-        // Инициализация менеджеров
         logManager = new LogManager(this);
         detailManager = new DetailManager(this);
         profileManager = new ProfileManager();
         fileManager = new FileManager(this, profileManager);
 
-        // Watchers
         localLogWatcher = new LogFileWatcher(this, fileManager, logManager);
         remoteLogWatcher = new RemoteLogWatcher(this, fileManager, logManager);
 
         profileManager.setOnProfileSelected(profile -> {
-            fileManager.getFileNames().clear();  // Очистить старый список
-            logManager.clearLogs();               // Очистить логи
+            fileManager.getFileNames().clear();
+            logManager.clearLogs();
             localLogWatcher.stopWatching();
             remoteLogWatcher.stopWatching();
 
@@ -55,30 +53,24 @@ public class MainLayoutManager {
                 logManager.setActiveParser(profile.getFormat());
 
                 if (profile.isRemote()) {
-                    // ======== РАБОТАЕМ С УДАЛЁННЫМ ПРОФИЛЕМ ==========
                     RemoteLogWatcher watcher = getRemoteLogWatcher();
                     List<String> cachedFiles = watcher.getFileListFromCache(profile);
 
                     if (!cachedFiles.isEmpty()) {
-                        // ⚡ Показать файлы из кэша
                         fileManager.getFileNames().setAll(cachedFiles);
-                        System.out.println("⚡ Showing cached remote file list for profile: " + profile.getId());
-                        showLoading(false); // сразу скрыть лоадер
+                        showLoading(false);
                     } else {
-                        // ❗ Нет кэша — показываем лоадер до получения списка
                         showLoading(true);
                     }
 
                     if (profile.getHost() != null && !profile.getHost().isBlank()) {
-                        watcher.startWatching(profile);  // вотчер сам загрузит и обновит
+                        watcher.startWatching(profile);
                     }
 
                 } else {
-                    // ======== РАБОТАЕМ С ЛОКАЛЬНЫМ ПРОФИЛЕМ ==========
                     File path = new File(profile.getPath());
                     if (path.exists() && path.isDirectory()) {
                         showLoading(true);
-                        // ПЕРЕДАЧА ПРОФИЛЯ В FILEMANAGER
                         fileManager.loadFileList(profile);
                         localLogWatcher.startWatching(path);
                     } else {
@@ -87,7 +79,6 @@ public class MainLayoutManager {
                     }
                 }
             } else {
-                // если нет профиля
                 fileManager.getFileNames().clear();
                 showLoading(false);
             }
@@ -110,7 +101,7 @@ public class MainLayoutManager {
 
         scanIndicator = new ProgressIndicator();
         scanIndicator.setVisible(false);
-        scanIndicator.getStyleClass().add("tiny-indicator"); // 👈 кастомный класс
+        scanIndicator.getStyleClass().add("tiny-indicator");
         StackPane.setAlignment(scanIndicator, Pos.TOP_RIGHT);
         StackPane.setMargin(scanIndicator, new Insets(5));
 
@@ -123,7 +114,7 @@ public class MainLayoutManager {
 
     public void showLoading(boolean show) {
         loadingIndicator.setVisible(show);
-        mainLayout.setDisable(show); // Опционально, чтобы не давать пользователю взаимодействовать во время загрузки
+        mainLayout.setDisable(show);
     }
 
     public LogManager getLogManager() {
@@ -180,6 +171,6 @@ public class MainLayoutManager {
     }
 
     public void clearLogDisplay() {
-        getLogManager().clearLogs(); // если такой метод уже есть
+        getLogManager().clearLogs();
     }
 }

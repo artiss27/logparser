@@ -5,17 +5,15 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Profile {
     private String name;
-    private String path; // используется и для локальных, и для удалённых
+    private String path;
     private String format;
     private boolean remote;
     private String host;
     private int port;
     private String username;
-    private String password; // пока без шифрования
+    private String password;
 
-    public Profile() {
-        // Default constructor for Jackson
-    }
+    public Profile() {}
 
     public Profile(String name, String path, String format) {
         this.name = name;

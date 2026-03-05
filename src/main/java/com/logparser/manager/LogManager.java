@@ -31,6 +31,9 @@ import javafx.scene.text.Text;
 import javafx.util.Duration;
 import javafx.application.Platform;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.File;
 import java.io.IOException;
 import java.time.LocalDate;
@@ -41,6 +44,7 @@ import java.util.function.Consumer;
 
 public class LogManager {
 
+    private static final Logger log = LoggerFactory.getLogger(LogManager.class);
     private final MainLayoutManager layoutManager;
     private final VBox logPane;
     private final TableView<LogEntry> tableView;
@@ -231,7 +235,6 @@ public class LogManager {
         dateColumn.setSortType(TableColumn.SortType.DESCENDING);
         table.getSortOrder().add(dateColumn);
 
-        // 🔧 Подсветка новых строк в таблице
         table.setRowFactory(tv -> new TableRow<>() {
             @Override
             protected void updateItem(LogEntry item, boolean empty) {
@@ -256,7 +259,6 @@ public class LogManager {
     public void loadLogsFromFile(String path, boolean isRemote) {
         if (path == null) return;
 
-        // Новый токен — увеличиваем при каждом новом запросе загрузки
         int token = loadToken.incrementAndGet();
 
         layoutManager.showLoading(true);
@@ -265,15 +267,12 @@ public class LogManager {
         String fileName = new File(path).getName();
         Profile profile = layoutManager.getProfileManager().getSelectedProfile();
 
-        // ==== КЕШИРОВАННЫЙ МОМЕНТАЛЬНЫЙ ПОКАЗ ====
         if (isRemote && profile != null) {
             RemoteLogWatcher watcher = layoutManager.getRemoteLogWatcher();
             Map<String, List<LogEntry>> fileMap = watcher.getProfileFileCache().get(profile.getId());
 
             if (fileMap != null && fileMap.containsKey(fileName)) {
                 List<LogEntry> cached = fileMap.get(fileName);
-                System.out.println("⚡ Cached logs loaded for: " + fileName);
-
                 Platform.runLater(() -> {
                     masterData.setAll(cached);
                     autoResizeColumns();
@@ -281,8 +280,6 @@ public class LogManager {
                 });
             }
         }
-        // ==== ДАЛЬШЕ ВСЕГДА запускаем загрузку (для обновления) ====
-        // Wrapper class to hold both loader and entries
         class LoadResult {
             final PagedLoader loader;
             final List<LogEntry> entries;
@@ -303,7 +300,6 @@ public class LogManager {
                     accessor.setRemotePath(path);
                     loader = new RemotePagedLogLoader(accessor, activeParser);
                     entries = loader.loadNextPage();
-                    // Кладём в кеш для профиля и файла:
                     RemoteLogWatcher watcher = layoutManager.getRemoteLogWatcher();
                     watcher.getProfileFileCache()
                             .computeIfAbsent(profile.getId(), k -> new ConcurrentHashMap<>())
@@ -326,7 +322,6 @@ public class LogManager {
                 return;
             }
 
-            // Сохраняем loader для возможности загрузки следующих страниц
             pagedLoader = result.loader;
             List<LogEntry> loadedEntries = result.entries;
 
@@ -334,11 +329,9 @@ public class LogManager {
                 loadedEntries = new ArrayList<>();
             }
 
-            // Reset highlight
             loadedEntries.forEach(entry -> entry.setHighlighted(false));
             masterData.setAll(loadedEntries);
 
-            // Добавляем маркер "Load more", если есть еще данные
             appendLoadMoreMarker();
 
             autoResizeColumns();
@@ -383,7 +376,7 @@ public class LogManager {
         };
 
         Consumer<Throwable> onError = error -> {
-            error.printStackTrace();
+            log.error("Failed to load next page", error);
             layoutManager.showLoading(false);
         };
 
@@ -478,7 +471,6 @@ public class LogManager {
     }
 
     private void appendLoadMoreMarker() {
-        // Удаляем предыдущие маркеры, если есть
         masterData.removeIf(entry -> "LM".equals(entry.getLevel()) || "-".equals(entry.getLevel()));
 
         if (pagedLoader != null && pagedLoader.hasMore()) {
@@ -500,7 +492,7 @@ public class LogManager {
 
     private String extractGroupKey(String dateStr) {
         if (dateStr == null || dateStr.isBlank()) return "";
-        return dateStr.split("\\.")[0].trim(); // "2024-04-19 12:45:22.124" → "2024-04-19 12:45:22"
+        return dateStr.split("\\.")[0].trim();
     }
 
     private void rebuildGroupColorMap() {
@@ -539,7 +531,7 @@ public class LogManager {
 
             loadLogsFromFile(fullPath, profile.isRemote());
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Failed to load file: {}", fileName, e);
         }
     }
 }

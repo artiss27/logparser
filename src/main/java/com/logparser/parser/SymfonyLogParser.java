@@ -33,7 +33,6 @@ public class SymfonyLogParser implements LogParser {
             String context = "";
             String message = remaining;
 
-            // Если в оставшейся части есть JSON
             int jsonStart = remaining.indexOf('{');
             int jsonEnd = remaining.lastIndexOf('}');
 
@@ -62,7 +61,7 @@ public class SymfonyLogParser implements LogParser {
                     if (entry != null) {
                         entries.add(entry);
                     }
-                    currentLog.setLength(0); // очищаем буфер
+                    currentLog.setLength(0);
                 }
             }
             if (currentLog.length() > 0) {
@@ -71,7 +70,6 @@ public class SymfonyLogParser implements LogParser {
             currentLog.append(line);
         }
 
-        // Последний лог, если остался
         if (currentLog.length() > 0) {
             LogEntry entry = parseLine(currentLog.toString());
             if (entry != null) {

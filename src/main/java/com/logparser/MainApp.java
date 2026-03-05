@@ -13,7 +13,7 @@ public class MainApp extends Application {
 
     @Override
     public void start(Stage primaryStage) {
-        layoutManager = new MainLayoutManager();  // 🔧 Используем поле класса вместо локальной переменной
+        layoutManager = new MainLayoutManager();
 
         Scene scene = new Scene(layoutManager.getMainLayout(), 1400, 900);
         scene.getStylesheets().add(getClass().getResource("/style.css").toExternalForm());
@@ -22,13 +22,11 @@ public class MainApp extends Application {
         primaryStage.setScene(scene);
         primaryStage.show();
 
-        // 🔍 Отслеживаем активность окна
         primaryStage.focusedProperty().addListener((obs, wasFocused, isNowFocused) -> {
             layoutManager.setWindowFocused(isNowFocused);
         });
 
         primaryStage.setOnCloseRequest(event -> {
-            System.out.println("🛑 Window closed — calling shutdown");
             if (layoutManager != null) {
                 layoutManager.shutdown();
             }
@@ -40,7 +38,6 @@ public class MainApp extends Application {
     @Override
     public void stop() throws Exception {
         super.stop();
-        System.out.println("🛑 MainApp.stop() called");
         if (layoutManager != null) {
             layoutManager.shutdown();
         }

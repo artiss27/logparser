@@ -53,7 +53,6 @@ public class OxLogParser implements LogParser {
             int messageEnd = contextStart != -1 ? contextStart : (extraStart != -1 ? extraStart : remaining.length());
             message = remaining.substring(0, messageEnd).trim();
 
-            // --- beautify stack trace in message ---
             message = formatStackTrace(message);
 
             return new LogEntry(dateTime, file, level, message, context, extra);
@@ -62,7 +61,6 @@ public class OxLogParser implements LogParser {
         return null;
     }
 
-    // --- Utility for beautifying stack trace in message ---
     private String formatStackTrace(String input) {
         if (input == null) return null;
         int idx = input.indexOf("Stack trace:");
@@ -71,9 +69,7 @@ public class OxLogParser implements LogParser {
         String before = input.substring(0, idx).trim();
         String stack = input.substring(idx).trim();
 
-        // каждый #N переносим на новую строку (и саму первую строку тоже)
         stack = stack.replaceAll("\\s*#(\\d+)\\s*", "\n#$1 ");
-        // чтобы "Stack trace:" начинался с новой строки
         stack = "\n\n" + stack.trim();
 
         return before + stack;

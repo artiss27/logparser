@@ -42,11 +42,9 @@ public class FileManager {
         fileListPane.setPadding(new Insets(10));
         fileListPane.setStyle("-fx-background-color: #f2f2f2;");
 
-        // Initialize file stats label
         fileStatsLabel = new Label("Log Files:");
         fileStatsLabel.setStyle("-fx-font-weight: bold;");
 
-        // Add listener to update stats when file list changes
         fileNames.addListener((javafx.collections.ListChangeListener<String>) change -> updateFileStats());
 
         formatSelector = new ComboBox<>(FXCollections.observableArrayList("OX", "Symfony"));
@@ -85,12 +83,10 @@ public class FileManager {
         reloadButton.setOnAction(e -> {
             Profile profile = profileManager.getSelectedProfile();
 
-            // Clear logs and detail view before reloading file list
             layoutManager.getLogManager().clearLogs();
             layoutManager.getDetailManager().showLogDetails(null, null);
             fileListView.getSelectionModel().clearSelection();
 
-            // For remote profiles, clear cache and force refresh from server
             if (profile != null && profile.isRemote()) {
                 layoutManager.getRemoteLogWatcher().clearCacheForProfile(profile.getId());
                 layoutManager.getRemoteLogWatcher().forceRefresh();
@@ -138,11 +134,11 @@ public class FileManager {
     }
 
     public void loadFileList(Profile profile, boolean forceReload) {
-        layoutManager.showLoading(true); // 🔥 показываем индикатор
+        layoutManager.showLoading(true);
         fileNames.clear();
-        fileSizes.clear(); // Clear file sizes
+        fileSizes.clear();
         if (profile == null) {
-            layoutManager.showLoading(false); // 🔥 скрываем сразу, если профиль не выбран
+            layoutManager.showLoading(false);
             return;
         }
 
@@ -156,7 +152,7 @@ public class FileManager {
                             .map(file -> {
                                 String fileName = file.getName();
                                 long fileSize = file.length();
-                                fileSizes.put(fileName, fileSize); // Track file size
+                                fileSizes.put(fileName, fileSize);
                                 String size = humanReadableByteCountBin(fileSize);
                                 return fileName + " (" + size + ")";
                             })
@@ -176,10 +172,8 @@ public class FileManager {
             if (watcher != null && !forceReload) {
                 List<String> cachedFiles = watcher.getFileListFromCache(profile);
                 if (!cachedFiles.isEmpty()) {
-                    // Extract file sizes from cached file names (format: "filename (size)")
                     for (String cachedFile : cachedFiles) {
                         String fileName = cachedFile.replaceAll(" \\(.+?\\)$", "");
-                        // Try to extract size from the string (e.g., "file.log (1.5 MB)")
                         String sizeStr = cachedFile.replaceAll("^.*\\((.+?)\\)$", "$1");
                         long sizeBytes = parseSizeString(sizeStr);
                         if (sizeBytes > 0) {
@@ -187,18 +181,14 @@ public class FileManager {
                         }
                     }
 
-                    // Sort cached files alphabetically
                     List<String> sortedFiles = new ArrayList<>(cachedFiles);
                     sortedFiles.sort(String.CASE_INSENSITIVE_ORDER);
                     fileNames.setAll(sortedFiles);
-                    System.out.println("⚡ Loaded cached file list for profile: " + profile.getId());
                     layoutManager.showLoading(false);
                 } else {
-                    // Кеш пустой, загрузка будет из watcher
                     layoutManager.showLoading(true);
                 }
             } else {
-                // Force reload - watcher will populate the list
                 layoutManager.showLoading(true);
             }
         }
@@ -247,8 +237,7 @@ public class FileManager {
         String displayName = fileName + " (" + humanReadableByteCountBin(sizeBytes) + ")";
         if (fileNames.stream().noneMatch(name -> name.startsWith(fileName))) {
             fileNames.add(displayName);
-            fileSizes.put(fileName, sizeBytes); // Track file size
-            // Sort the list alphabetically after adding
+            fileSizes.put(fileName, sizeBytes);
             FXCollections.sort(fileNames, String.CASE_INSENSITIVE_ORDER);
             updatedFiles.put(fileName, markAsUpdated);
             refreshFileListView();
@@ -278,12 +267,11 @@ public class FileManager {
                     for (File file : logs) file.delete();
                 }
 
-                // ✅ Очистка UI:
                 fileNames.clear();
                 updatedFiles.clear();
-                fileListView.getSelectionModel().clearSelection(); // сброс выбора
-                layoutManager.getLogManager().clearLogs();          // очистка таблицы
-                layoutManager.getDetailManager().showLogDetails(null, null); // очистка detail-панели
+                fileListView.getSelectionModel().clearSelection();
+                layoutManager.getLogManager().clearLogs();
+                layoutManager.getDetailManager().showLogDetails(null, null);
             }
         });
     }
@@ -330,10 +318,8 @@ public class FileManager {
             long multiplier = 1;
 
             if (sizeStr.endsWith("B")) {
-                // Remove the 'B' at the end
                 sizeStr = sizeStr.substring(0, sizeStr.length() - 1).trim();
 
-                // Check for unit prefix
                 if (sizeStr.endsWith("K")) {
                     multiplier = 1024;
                     sizeStr = sizeStr.substring(0, sizeStr.length() - 1);

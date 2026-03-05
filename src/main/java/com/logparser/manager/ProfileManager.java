@@ -16,6 +16,8 @@ import javafx.stage.DirectoryChooser;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import com.logparser.utils.CryptoUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import javax.crypto.SecretKey;
 
 import java.io.File;
@@ -29,6 +31,7 @@ import java.util.ArrayList;
 
 public class ProfileManager {
 
+    private static final Logger log = LoggerFactory.getLogger(ProfileManager.class);
     private final VBox profilePane;
     private final ComboBox<Profile> profileSelector;
     private final ObservableList<Profile> profiles = FXCollections.observableArrayList();
@@ -41,19 +44,6 @@ public class ProfileManager {
         if (envHome != null && !envHome.isBlank()) {
             System.setProperty("user.home", envHome);
         }
-
-        // Diagnostic output for permission troubleshooting
-        System.out.println("🔍 ProfileManager Diagnostics:");
-        System.out.println("   HOME env: " + System.getenv("HOME"));
-        System.out.println("   user.home: " + System.getProperty("user.home"));
-        System.out.println("   Profile file path: " + getProfileFilePath());
-        System.out.println("   OS: " + System.getProperty("os.name"));
-
-        // Check if directories are writable
-        File profileFile = new File(getProfileFilePath().replace(".json", ".json.enc"));
-        File profileDir = profileFile.getParentFile();
-        System.out.println("   Profile dir exists: " + profileDir.exists());
-        System.out.println("   Profile dir writable: " + (profileDir.exists() && profileDir.canWrite()));
     }
 
     public ProfileManager() {
@@ -144,12 +134,11 @@ public class ProfileManager {
                 SecretKey key = CryptoUtils.getOrCreateKey();
                 byte[] encrypted = Files.readAllBytes(file.toPath());
                 byte[] decrypted = CryptoUtils.decrypt(encrypted, key);
-                // JSON to List<Profile>
                 List<Profile> list = mapper.readValue(decrypted, new TypeReference<>() {});
-                list.sort(Comparator.comparing(Profile::getName, String.CASE_INSENSITIVE_ORDER)); // ✅ сортировка
+                list.sort(Comparator.comparing(Profile::getName, String.CASE_INSENSITIVE_ORDER));
                 return list;
             } catch (Exception e) {
-                e.printStackTrace();
+                log.error("Failed to load profiles from: {}", file.getAbsolutePath(), e);
             }
         }
         return new ArrayList<>();
@@ -162,7 +151,6 @@ public class ProfileManager {
             byte[] encrypted = CryptoUtils.encrypt(json, key);
             File file = new File(PROFILE_FILE.replace(".json", ".json.enc"));
 
-            // Ensure parent directory exists and is writable
             File parentDir = file.getParentFile();
             if (!parentDir.exists()) {
                 boolean created = parentDir.mkdirs();
@@ -172,15 +160,15 @@ public class ProfileManager {
                 }
             }
 
-            // Check if we can write to the directory
             if (!parentDir.canWrite()) {
                 showPermissionError("No write permission for directory: " + parentDir.getAbsolutePath());
                 return;
             }
 
             Files.write(file.toPath(), encrypted);
-            System.out.println("✅ Profiles saved successfully to: " + file.getAbsolutePath());
+            log.info("Profiles saved successfully");
         } catch (IOException e) {
+            log.error("Failed to save profiles (IO error)", e);
             String message = "Failed to save profiles. " + e.getMessage();
             if (e.getMessage() != null && e.getMessage().contains("Permission denied")) {
                 showPermissionError("Permission denied while saving profiles.\n\n" +
@@ -190,10 +178,9 @@ public class ProfileManager {
             } else {
                 showError(message);
             }
-            e.printStackTrace();
         } catch (Exception e) {
+            log.error("Failed to save profiles", e);
             showError("Failed to save profiles: " + e.getMessage());
-            e.printStackTrace();
         }
     }
 
@@ -413,7 +400,7 @@ public class ProfileManager {
         remoteBox.setManaged(selected.isRemote());
         remoteBox.setVisible(selected.isRemote());
 
-        remoteCheck.selectedProperty().addListener((obs, old, isRemote) -> {
+        remoteCheck.selectedProperty().addListener((obs, oldVal, isRemote) -> {
             pathSection.setVisible(!isRemote);
             pathSection.setManaged(!isRemote);
             remoteBox.setVisible(isRemote);

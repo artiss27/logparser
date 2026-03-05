@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>LogParser</string>
+    <key>CFBundleDisplayName</key>
+    <string>LogParser</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.logparser.app</string>
+    <key>CFBundleVersion</key>
+    <string>1.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleExecutable</key>
+    <string>LogParser</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>10.15</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+
+    <!-- Request Full Disk Access permission -->
+    <key>NSAppleEventsUsageDescription</key>
+    <string>LogParser needs access to read log files from various directories.</string>
+
+    <!-- Request access to user's home directory -->
+    <key>NSHomeDirectoryUsageDescription</key>
+    <string>LogParser needs to save your profile settings and preferences.</string>
+
+    <!-- Request access to save files -->
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>LogParser needs to save profile configurations.</string>
+
+    <!-- Add additional permissions that might be needed -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+
+    <key>com.apple.security.files.downloads.read-write</key>
+    <true/>
+</dict>
+</plist>
+
